@@ -86,6 +86,23 @@ export function searchSchema(index: SchemaIndex, options: SearchOptions): Search
     interface: ["INTERFACE"],
   };
 
+  // Collect matching enum values as qualified results (e.g. CurrencyCode.EUR)
+  function collectEnumValueMatches(typeInfo: { name: string; kind: string; enumValues: { name: string; description: string | null }[] }): void {
+    if (typeInfo.kind !== "ENUM") return;
+    for (const ev of typeInfo.enumValues) {
+      if (matches(ev.name)) {
+        results.push({
+          kind: "enum",
+          name: typeInfo.name,
+          signature: `${typeInfo.name}.${ev.name}`,
+          description: ev.description,
+          parentType: typeInfo.name,
+          score: 0, // enum value matches rank lowest
+        });
+      }
+    }
+  }
+
   const shouldSearchTypes =
     kind === "all" || kind in kindToGqlKind;
 
@@ -104,11 +121,15 @@ export function searchSchema(index: SchemaIndex, options: SearchOptions): Search
           description: typeInfo.description,
           score: score(typeInfo.name),
         });
+        // Also search enum values as separate results (skip for wildcards to avoid noise)
+        if (!isWildcard) collectEnumValueMatches(typeInfo);
         continue;
       }
 
-      // Also match on field names within types (show which field matched)
+      // Also match on field names / enum values within types
       if (!isWildcard) {
+        collectEnumValueMatches(typeInfo);
+
         for (const f of typeInfo.fields) {
           if (matches(f.name)) {
             results.push({

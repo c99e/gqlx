@@ -203,6 +203,129 @@ describe("searchSchema", () => {
 });
 
 // ============================================================
+// Enum value search (SAU-240)
+// ============================================================
+
+describe("searchSchema enum value search", () => {
+  // Schema with large enums and described values
+  const enumSDL = `
+    type Query { dummy: String }
+    enum CurrencyCode {
+      "US Dollar"
+      USD
+      "Euro"
+      EUR
+      "British Pound Sterling"
+      GBP
+      "Japanese Yen"
+      JPY
+      "Swiss Franc"
+      CHF
+      "Canadian Dollar"
+      CAD
+      "Australian Dollar"
+      AUD
+    }
+    enum CountryCode {
+      US
+      GB
+      FR
+      DE
+      JP
+      CA
+      AU
+    }
+    enum PostStatus {
+      DRAFT
+      PUBLISHED
+      ARCHIVED
+    }
+  `;
+  const enumIndex = parseIntrospection(introspectionFromSDL(enumSDL));
+
+  test("matches individual enum value names when kind is enum", () => {
+    const results = searchSchema(enumIndex, { pattern: "EUR", kind: "enum" });
+    expect(results.length).toBeGreaterThan(0);
+    const eur = results.find((r) => r.signature.includes("CurrencyCode.EUR"));
+    expect(eur).toBeDefined();
+  });
+
+  test("matched enum values have qualified signature: EnumName.ValueName", () => {
+    const results = searchSchema(enumIndex, { pattern: "GBP", kind: "enum" });
+    const gbp = results.find((r) => r.signature === "CurrencyCode.GBP");
+    expect(gbp).toBeDefined();
+    expect(gbp!.kind).toBe("enum");
+  });
+
+  test("enum value result includes description when available", () => {
+    const results = searchSchema(enumIndex, { pattern: "EUR", kind: "enum" });
+    const eur = results.find((r) => r.signature === "CurrencyCode.EUR");
+    expect(eur).toBeDefined();
+    expect(eur!.description).toBe("Euro");
+  });
+
+  test("enum name matches rank higher than enum value matches", () => {
+    // Search for "Post" — should match PostStatus (enum name) before any value
+    const results = searchSchema(enumIndex, { pattern: "Post", kind: "enum" });
+    expect(results.length).toBeGreaterThan(0);
+    // First result should be the enum-level match on PostStatus
+    expect(results[0].name).toBe("PostStatus");
+    expect(results[0].signature).toContain("enum PostStatus");
+  });
+
+  test("enum value search is case-insensitive", () => {
+    const lower = searchSchema(enumIndex, { pattern: "eur", kind: "enum" });
+    const upper = searchSchema(enumIndex, { pattern: "EUR", kind: "enum" });
+    const mixed = searchSchema(enumIndex, { pattern: "Eur", kind: "enum" });
+    expect(lower.length).toBe(upper.length);
+    expect(lower.length).toBe(mixed.length);
+    expect(lower.length).toBeGreaterThan(0);
+  });
+
+  test("enum value search works with kind=all", () => {
+    const results = searchSchema(enumIndex, { pattern: "EUR", kind: "all" });
+    const eur = results.find((r) => r.signature === "CurrencyCode.EUR");
+    expect(eur).toBeDefined();
+  });
+
+  test("value existing in multiple enums returns matches from each", () => {
+    // "AU" substring matches AUD in CurrencyCode and AU in CountryCode
+    const results = searchSchema(enumIndex, { pattern: "AU", kind: "enum" });
+    const currencyMatches = results.filter((r) => r.name === "CurrencyCode" && r.parentType);
+    const countryMatches = results.filter((r) => r.name === "CountryCode" && r.parentType);
+    expect(currencyMatches.length).toBeGreaterThan(0);
+    expect(countryMatches.length).toBeGreaterThan(0);
+  });
+
+  test("enum value without description has null description", () => {
+    // PostStatus values have no descriptions in this schema
+    const results = searchSchema(enumIndex, { pattern: "DRAFT", kind: "enum" });
+    const draft = results.find((r) => r.signature === "PostStatus.DRAFT");
+    expect(draft).toBeDefined();
+    expect(draft!.description).toBeNull();
+  });
+
+  test("enum value results include parentType", () => {
+    const results = searchSchema(enumIndex, { pattern: "EUR", kind: "enum" });
+    const eur = results.find((r) => r.signature === "CurrencyCode.EUR");
+    expect(eur).toBeDefined();
+    expect(eur!.parentType).toBe("CurrencyCode");
+  });
+
+  test("no matching enum values returns empty", () => {
+    const results = searchSchema(enumIndex, { pattern: "XYZNONEXISTENT", kind: "enum" });
+    expect(results).toEqual([]);
+  });
+
+  test("wildcard does not return individual enum values", () => {
+    // Wildcard should return enum types, not explode into every value
+    const results = searchSchema(enumIndex, { pattern: "*", kind: "enum" });
+    const valueResults = results.filter((r) => r.parentType);
+    expect(valueResults.length).toBe(0);
+  });
+});
+
+// ============================================================
 // Per-category limit (SAU-238)
 // ============================================================
 
