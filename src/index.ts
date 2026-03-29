@@ -168,19 +168,26 @@ export default function (pi: ExtensionAPI) {
     label: "GQL Type",
     description:
       "Get the definition of a GraphQL type with fields, arguments, and referenced types. " +
-      "Compact by default (names and types only). Use verbose for full descriptions.",
+      "Compact by default (names and types only). Use verbose for full descriptions. " +
+      "Use pattern to filter fields by name or type substring.",
     promptSnippet:
       "Get GraphQL type definition with fields, arguments, and referenced types",
     promptGuidelines: [
       "Use gql_type after gql_search to understand a type's fields and arguments before constructing queries.",
       "Check input types to see required fields before writing mutations.",
       "Start with compact mode (default). Use verbose: true only when you need field descriptions.",
+      "Use pattern to filter large types (50+ fields) to only show fields matching a substring.",
     ],
     parameters: Type.Object({
       name: Type.String({ description: "Exact type name (case-sensitive)" }),
       verbose: Type.Optional(
         Type.Boolean({
           description: "Include full descriptions on fields and types (default false)",
+        })
+      ),
+      pattern: Type.Optional(
+        Type.String({
+          description: "Filter fields by case-insensitive substring match on field name or type",
         })
       ),
     }),
@@ -203,7 +210,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const verbose = params.verbose === true;
-      const formatted = formatTypeSDL(typeInfo, { index, verbose });
+      const formatted = formatTypeSDL(typeInfo, { index, verbose, pattern: params.pattern });
 
       return {
         content: [{ type: "text", text: formatted }],

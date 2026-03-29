@@ -309,6 +309,8 @@ export interface FormatTypeOptions {
   index?: SchemaIndex;
   /** Show descriptions on types, fields, enum values (default false) */
   verbose?: boolean;
+  /** Filter fields/input fields by case-insensitive substring on name, type, or arg names */
+  pattern?: string;
 }
 
 export function formatTypeSDL(typeInfo: TypeInfo, options?: FormatTypeOptions): string {
@@ -320,6 +322,20 @@ export function formatTypeSDL(typeInfo: TypeInfo, options?: FormatTypeOptions): 
     lines.push(`# ${typeInfo.description}`);
   }
 
+  const needle = options?.pattern?.toLowerCase();
+
+  function fieldMatches(name: string, type: string, argNames?: string[]): boolean {
+    if (!needle) return true;
+    if (name.toLowerCase().includes(needle)) return true;
+    if (type.toLowerCase().includes(needle)) return true;
+    if (argNames) {
+      for (const a of argNames) {
+        if (a.toLowerCase().includes(needle)) return true;
+      }
+    }
+    return false;
+  }
+
   switch (typeInfo.kind) {
     case "OBJECT":
     case "INTERFACE": {
@@ -327,6 +343,7 @@ export function formatTypeSDL(typeInfo: TypeInfo, options?: FormatTypeOptions): 
       const impl = typeInfo.interfaces.length > 0 ? ` implements ${typeInfo.interfaces.join(" & ")}` : "";
       lines.push(`${keyword} ${typeInfo.name}${impl} {`);
       for (const f of typeInfo.fields) {
+        if (!fieldMatches(f.name, f.type, f.args.map((a) => a.name))) continue;
         const args = formatArgs(f.args);
         const desc = verbose && f.description ? `  # ${f.description}` : "";
         const deprecated = f.isDeprecated ? " @deprecated" : "";
@@ -339,6 +356,7 @@ export function formatTypeSDL(typeInfo: TypeInfo, options?: FormatTypeOptions): 
     case "INPUT_OBJECT": {
       lines.push(`input ${typeInfo.name} {`);
       for (const f of typeInfo.inputFields) {
+        if (!fieldMatches(f.name, f.type)) continue;
         const def = f.defaultValue !== null ? ` = ${f.defaultValue}` : "";
         const desc = verbose && f.description ? `  # ${f.description}` : "";
         lines.push(`  ${f.name}: ${f.type}${def}${desc}`);
