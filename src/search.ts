@@ -186,14 +186,31 @@ function formatKind(kind: string): string {
   }
 }
 
-function formatTypeSignature(t: { name: string; kind: string; enumValues: { name: string }[]; possibleTypes: string[] }): string {
+function plural(n: number, singular: string, pluralForm: string): string {
+  return n === 1 ? `${n} ${singular}` : `${n} ${pluralForm}`;
+}
+
+function countRequiredInputFields(inputFields: { type: string; defaultValue: string | null }[]): number {
+  return inputFields.filter((f) => f.type.endsWith("!") && f.defaultValue === null).length;
+}
+
+function formatTypeSignature(t: { name: string; kind: string; fields: unknown[]; inputFields: { type: string; defaultValue: string | null }[]; enumValues: { name: string }[]; possibleTypes: string[] }): string {
   const kindLabel = formatKind(t.kind);
 
   switch (t.kind) {
+    case "OBJECT":
+    case "INTERFACE": {
+      return `${kindLabel} ${t.name} (${plural(t.fields.length, "field", "fields")})`;
+    }
+    case "INPUT_OBJECT": {
+      const total = t.inputFields.length;
+      const required = countRequiredInputFields(t.inputFields);
+      return `input ${t.name} (${plural(total, "field", "fields")}, ${plural(required, "required", "required")})`;
+    }
     case "ENUM": {
       const vals = t.enumValues.map((v) => v.name);
       const preview = vals.length <= 6 ? vals.join(", ") : vals.slice(0, 5).join(", ") + ", ...";
-      return `enum ${t.name} { ${preview} }`;
+      return `enum ${t.name} (${plural(vals.length, "value", "values")}) { ${preview} }`;
     }
     case "UNION": {
       return `union ${t.name} = ${t.possibleTypes.join(" | ")}`;

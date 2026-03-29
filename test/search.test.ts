@@ -111,11 +111,87 @@ describe("searchSchema", () => {
     expect(results).toEqual([]);
   });
 
-  test("enum signature includes values preview", () => {
+  test("enum signature includes value count and preview", () => {
     const results = searchSchema(index, { pattern: "UserRole", kind: "enum" });
     expect(results.length).toBe(1);
+    expect(results[0].signature).toContain("3 values");
     expect(results[0].signature).toContain("ADMIN");
     expect(results[0].signature).toContain("MODERATOR");
+  });
+
+  test("object type signature includes field count", () => {
+    const results = searchSchema(index, { pattern: "User", kind: "type" });
+    const userResult = results.find((r) => r.name === "User")!;
+    expect(userResult).toBeDefined();
+    // User has: id, name, email, role, posts, createdAt = 6 fields
+    expect(userResult.signature).toBe("type User (6 fields)");
+  });
+
+  test("interface type signature includes field count", () => {
+    const ifaceIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        interface Node { id: ID!, createdAt: String! }
+        type Foo implements Node { id: ID!, createdAt: String!, name: String! }
+      `)
+    );
+    const results = searchSchema(ifaceIndex, { pattern: "Node", kind: "interface" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toBe("interface Node (2 fields)");
+  });
+
+  test("input type signature includes field count and required count", () => {
+    const results = searchSchema(index, { pattern: "CreateUserInput", kind: "input" });
+    expect(results.length).toBe(1);
+    // CreateUserInput has: name: String!, email: String!, role: UserRole
+    // 3 fields total, 2 required (non-null without default)
+    expect(results[0].signature).toBe("input CreateUserInput (3 fields, 2 required)");
+  });
+
+  test("input type with zero required fields omits required count", () => {
+    const results = searchSchema(index, { pattern: "UpdateUserInput", kind: "input" });
+    expect(results.length).toBe(1);
+    // UpdateUserInput has: name: String, email: String, role: UserRole — all optional
+    expect(results[0].signature).toBe("input UpdateUserInput (3 fields, 0 required)");
+  });
+
+  test("enum with many values includes count", () => {
+    const bigEnumIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        enum BigEnum { A B C D E F G H I J }
+      `)
+    );
+    const results = searchSchema(bigEnumIndex, { pattern: "BigEnum", kind: "enum" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toContain("10 values");
+    // Preview should be truncated (>6 values)
+    expect(results[0].signature).toContain("...");
+  });
+
+  test("type with one field shows singular", () => {
+    const singleIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        type Single { id: ID! }
+      `)
+    );
+    const results = searchSchema(singleIndex, { pattern: "Single", kind: "type" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toBe("type Single (1 field)");
+  });
+
+  test("enum with one value shows singular", () => {
+    const singleEnumIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        enum Solo { ONLY }
+      `)
+    );
+    const results = searchSchema(singleEnumIndex, { pattern: "Solo", kind: "enum" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toContain("1 value");
+    expect(results[0].signature).not.toContain("1 values");
   });
 
   test("query signature includes args and return type", () => {
