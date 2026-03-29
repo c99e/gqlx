@@ -1,0 +1,216 @@
+import type { SchemaIndex, SearchOptions, SearchResult } from "./types.js";
+import { formatArgs } from "./schema.js";
+
+/**
+ * Search the schema index for types, queries, mutations, fields.
+ *
+ * Pattern matching is case-insensitive substring. Use "*" to list all.
+ * Results are sorted: exact match > starts-with > contains.
+ */
+export function searchSchema(index: SchemaIndex, options: SearchOptions): SearchResult[] {
+  const { pattern, kind = "all", limit = 25 } = options;
+  const isWildcard = pattern === "*" || pattern === "";
+  const needle = pattern.toLowerCase();
+
+  const results: Array<SearchResult & { score: number }> = [];
+
+  function score(name: string): number {
+    if (isWildcard) return 0;
+    const lower = name.toLowerCase();
+    if (lower === needle) return 3; // exact
+    if (lower.startsWith(needle)) return 2; // prefix
+    return 1; // contains
+  }
+
+  function matches(text: string): boolean {
+    if (isWildcard) return true;
+    return text.toLowerCase().includes(needle);
+  }
+
+  function matchesAny(name: string, description: string | null): boolean {
+    return matches(name) || (description !== null && matches(description));
+  }
+
+  // Search queries
+  if (kind === "all" || kind === "query") {
+    for (const op of index.queries) {
+      if (matchesAny(op.name, op.description)) {
+        results.push({
+          kind: "query",
+          name: op.name,
+          signature: `query ${op.name}${formatArgs(op.args)}: ${op.type}`,
+          description: op.description,
+          score: score(op.name),
+        });
+      }
+    }
+  }
+
+  // Search mutations
+  if (kind === "all" || kind === "mutation") {
+    for (const op of index.mutations) {
+      if (matchesAny(op.name, op.description)) {
+        results.push({
+          kind: "mutation",
+          name: op.name,
+          signature: `mutation ${op.name}${formatArgs(op.args)}: ${op.type}`,
+          description: op.description,
+          score: score(op.name),
+        });
+      }
+    }
+  }
+
+  // Search subscriptions
+  if (kind === "all" || kind === "subscription") {
+    for (const op of index.subscriptions) {
+      if (matchesAny(op.name, op.description)) {
+        results.push({
+          kind: "subscription",
+          name: op.name,
+          signature: `subscription ${op.name}${formatArgs(op.args)}: ${op.type}`,
+          description: op.description,
+          score: score(op.name),
+        });
+      }
+    }
+  }
+
+  // Search types
+  const kindToGqlKind: Record<string, string[]> = {
+    type: ["OBJECT", "INTERFACE"],
+    input: ["INPUT_OBJECT"],
+    enum: ["ENUM"],
+    scalar: ["SCALAR"],
+    union: ["UNION"],
+    interface: ["INTERFACE"],
+  };
+
+  const shouldSearchTypes =
+    kind === "all" || kind in kindToGqlKind;
+
+  if (shouldSearchTypes) {
+    const allowedKinds = kind === "all" ? null : kindToGqlKind[kind] ?? null;
+
+    for (const [, typeInfo] of index.types) {
+      if (allowedKinds && !allowedKinds.includes(typeInfo.kind)) continue;
+
+      // Match on type name or description
+      if (matchesAny(typeInfo.name, typeInfo.description)) {
+        results.push({
+          kind: formatKind(typeInfo.kind),
+          name: typeInfo.name,
+          signature: formatTypeSignature(typeInfo),
+          description: typeInfo.description,
+          score: score(typeInfo.name),
+        });
+        continue;
+      }
+
+      // Also match on field names within types (show which field matched)
+      if (!isWildcard) {
+        for (const f of typeInfo.fields) {
+          if (matches(f.name)) {
+            results.push({
+              kind: formatKind(typeInfo.kind),
+              name: typeInfo.name,
+              signature: `${typeInfo.name}.${f.name}: ${f.type}`,
+              description: f.description,
+              parentType: typeInfo.name,
+              score: 0, // field matches rank lowest
+            });
+            break; // one match per type for field search
+          }
+        }
+        for (const f of typeInfo.inputFields) {
+          if (matches(f.name)) {
+            results.push({
+              kind: formatKind(typeInfo.kind),
+              name: typeInfo.name,
+              signature: `${typeInfo.name}.${f.name}: ${f.type}`,
+              description: f.description,
+              parentType: typeInfo.name,
+              score: 0,
+            });
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Sort by score descending, then alphabetically
+  results.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.name.localeCompare(b.name);
+  });
+
+  return results.slice(0, limit).map(({ score: _, ...rest }) => rest);
+}
+
+function formatKind(kind: string): string {
+  switch (kind) {
+    case "OBJECT":
+      return "type";
+    case "INPUT_OBJECT":
+      return "input";
+    case "ENUM":
+      return "enum";
+    case "SCALAR":
+      return "scalar";
+    case "UNION":
+      return "union";
+    case "INTERFACE":
+      return "interface";
+    default:
+      return kind.toLowerCase();
+  }
+}
+
+function formatTypeSignature(t: { name: string; kind: string; enumValues: { name: string }[]; possibleTypes: string[] }): string {
+  const kindLabel = formatKind(t.kind);
+
+  switch (t.kind) {
+    case "ENUM": {
+      const vals = t.enumValues.map((v) => v.name);
+      const preview = vals.length <= 6 ? vals.join(", ") : vals.slice(0, 5).join(", ") + ", ...";
+      return `enum ${t.name} { ${preview} }`;
+    }
+    case "UNION": {
+      return `union ${t.name} = ${t.possibleTypes.join(" | ")}`;
+    }
+    default:
+      return `${kindLabel} ${t.name}`;
+  }
+}
+
+/**
+ * Format search results into a readable string for the LLM.
+ */
+export function formatSearchResults(results: SearchResult[]): string {
+  if (results.length === 0) return "No results found.";
+
+  // Group by kind
+  const groups = new Map<string, SearchResult[]>();
+  for (const r of results) {
+    const existing = groups.get(r.kind) ?? [];
+    existing.push(r);
+    groups.set(r.kind, existing);
+  }
+
+  const lines: string[] = [];
+  const order = ["query", "mutation", "subscription", "type", "interface", "input", "enum", "union", "scalar"];
+
+  for (const kind of order) {
+    const items = groups.get(kind);
+    if (!items) continue;
+
+    lines.push(`${kind.charAt(0).toUpperCase() + kind.slice(1)}:`);
+    for (const item of items) {
+      lines.push(`  ${item.signature}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trimEnd();
+}
