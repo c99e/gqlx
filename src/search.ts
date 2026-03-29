@@ -145,7 +145,26 @@ export function searchSchema(index: SchemaIndex, options: SearchOptions): Search
     return a.name.localeCompare(b.name);
   });
 
-  return results.slice(0, limit).map(({ score: _, ...rest }) => rest);
+  const stripScore = ({ score: _, ...rest }: SearchResult & { score: number }): SearchResult => rest;
+
+  // When kind is "all", apply limit per category so no single kind dominates.
+  // Without this, types (which vastly outnumber queries/mutations in most schemas)
+  // drown out the more actionable operation results.
+  if (kind === "all") {
+    const grouped = new Map<string, Array<SearchResult & { score: number }>>();
+    for (const r of results) {
+      const bucket = grouped.get(r.kind) ?? [];
+      bucket.push(r);
+      grouped.set(r.kind, bucket);
+    }
+    const merged: SearchResult[] = [];
+    for (const [, items] of grouped) {
+      merged.push(...items.slice(0, limit).map(stripScore));
+    }
+    return merged;
+  }
+
+  return results.slice(0, limit).map(stripScore);
 }
 
 function formatKind(kind: string): string {
