@@ -304,10 +304,19 @@ export function formatOperationSignature(op: OperationInfo): string {
   return `${op.name}${formatArgs(op.args)}: ${op.type}`;
 }
 
-export function formatTypeSDL(typeInfo: TypeInfo, index?: SchemaIndex): string {
+export interface FormatTypeOptions {
+  /** SchemaIndex for expanding referenced enums/inputs inline */
+  index?: SchemaIndex;
+  /** Show descriptions on types, fields, enum values (default false) */
+  verbose?: boolean;
+}
+
+export function formatTypeSDL(typeInfo: TypeInfo, options?: FormatTypeOptions): string {
+  const index = options?.index;
+  const verbose = options?.verbose === true;
   const lines: string[] = [];
 
-  if (typeInfo.description) {
+  if (verbose && typeInfo.description) {
     lines.push(`# ${typeInfo.description}`);
   }
 
@@ -319,7 +328,7 @@ export function formatTypeSDL(typeInfo: TypeInfo, index?: SchemaIndex): string {
       lines.push(`${keyword} ${typeInfo.name}${impl} {`);
       for (const f of typeInfo.fields) {
         const args = formatArgs(f.args);
-        const desc = f.description ? `  # ${f.description}` : "";
+        const desc = verbose && f.description ? `  # ${f.description}` : "";
         const deprecated = f.isDeprecated ? " @deprecated" : "";
         lines.push(`  ${f.name}${args}: ${f.type}${deprecated}${desc}`);
       }
@@ -331,7 +340,7 @@ export function formatTypeSDL(typeInfo: TypeInfo, index?: SchemaIndex): string {
       lines.push(`input ${typeInfo.name} {`);
       for (const f of typeInfo.inputFields) {
         const def = f.defaultValue !== null ? ` = ${f.defaultValue}` : "";
-        const desc = f.description ? `  # ${f.description}` : "";
+        const desc = verbose && f.description ? `  # ${f.description}` : "";
         lines.push(`  ${f.name}: ${f.type}${def}${desc}`);
       }
       lines.push("}");
@@ -342,7 +351,7 @@ export function formatTypeSDL(typeInfo: TypeInfo, index?: SchemaIndex): string {
       lines.push(`enum ${typeInfo.name} {`);
       for (const v of typeInfo.enumValues) {
         const deprecated = v.isDeprecated ? " @deprecated" : "";
-        const desc = v.description ? `  # ${v.description}` : "";
+        const desc = verbose && v.description ? `  # ${v.description}` : "";
         lines.push(`  ${v.name}${deprecated}${desc}`);
       }
       lines.push("}");
@@ -360,7 +369,7 @@ export function formatTypeSDL(typeInfo: TypeInfo, index?: SchemaIndex): string {
     }
   }
 
-  // Expand referenced enums and input types inline if requested
+  // Expand referenced enums and input types inline when index is provided
   if (index) {
     const referenced = collectReferencedTypes(typeInfo, index);
     if (referenced.length > 0) {
@@ -368,7 +377,7 @@ export function formatTypeSDL(typeInfo: TypeInfo, index?: SchemaIndex): string {
       lines.push("--- Referenced Types ---");
       for (const ref of referenced) {
         lines.push("");
-        lines.push(formatTypeSDL(ref)); // no index → no recursive expansion
+        lines.push(formatTypeSDL(ref, { verbose })); // no index → no recursive expansion
       }
     }
   }

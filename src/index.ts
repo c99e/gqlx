@@ -167,19 +167,20 @@ export default function (pi: ExtensionAPI) {
     name: "gql_type",
     label: "GQL Type",
     description:
-      "Get the full definition of a GraphQL type including all fields, arguments, and descriptions. " +
-      "Referenced enums and input types are expanded inline.",
+      "Get the definition of a GraphQL type with fields, arguments, and referenced types. " +
+      "Compact by default (names and types only). Use verbose for full descriptions.",
     promptSnippet:
-      "Get full GraphQL type definition with fields, arguments, and referenced types",
+      "Get GraphQL type definition with fields, arguments, and referenced types",
     promptGuidelines: [
       "Use gql_type after gql_search to understand a type's fields and arguments before constructing queries.",
       "Check input types to see required fields before writing mutations.",
+      "Start with compact mode (default). Use verbose: true only when you need field descriptions.",
     ],
     parameters: Type.Object({
       name: Type.String({ description: "Exact type name (case-sensitive)" }),
-      expand: Type.Optional(
+      verbose: Type.Optional(
         Type.Boolean({
-          description: "Expand referenced enums and input types inline (default true)",
+          description: "Include full descriptions on fields and types (default false)",
         })
       ),
     }),
@@ -201,8 +202,8 @@ export default function (pi: ExtensionAPI) {
         throw new Error(msg);
       }
 
-      const expand = params.expand !== false;
-      const formatted = formatTypeSDL(typeInfo, expand ? index : undefined);
+      const verbose = params.verbose === true;
+      const formatted = formatTypeSDL(typeInfo, { index, verbose });
 
       return {
         content: [{ type: "text", text: formatted }],
