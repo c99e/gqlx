@@ -221,7 +221,14 @@ function formatTypeSignature(t: { name: string; kind: string; fields: unknown[];
   switch (t.kind) {
     case "OBJECT":
     case "INTERFACE": {
-      return `${kindLabel} ${t.name} (${plural(t.fields.length, "field", "fields")})`;
+      const INLINE_THRESHOLD = 4;
+      const count = t.fields.length;
+      const base = `${kindLabel} ${t.name} (${plural(count, "field", "fields")})`;
+      if (count > 0 && count <= INLINE_THRESHOLD) {
+        const names = (t.fields as { name: string }[]).map((f) => f.name).join(", ");
+        return `${base} { ${names} }`;
+      }
+      return base;
     }
     case "INPUT_OBJECT": {
       const total = t.inputFields.length;

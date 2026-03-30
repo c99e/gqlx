@@ -137,7 +137,7 @@ describe("searchSchema", () => {
     );
     const results = searchSchema(ifaceIndex, { pattern: "Node", kind: "interface" });
     expect(results.length).toBe(1);
-    expect(results[0].signature).toBe("interface Node (2 fields)");
+    expect(results[0].signature).toBe("interface Node (2 fields) { id, createdAt }");
   });
 
   test("input type signature includes field count and required count", () => {
@@ -178,7 +178,7 @@ describe("searchSchema", () => {
     );
     const results = searchSchema(singleIndex, { pattern: "Single", kind: "type" });
     expect(results.length).toBe(1);
-    expect(results[0].signature).toBe("type Single (1 field)");
+    expect(results[0].signature).toBe("type Single (1 field) { id }");
   });
 
   test("enum with one value shows singular", () => {
@@ -459,6 +459,120 @@ describe("searchSchema per-category limit", () => {
     for (const [, count] of groups) {
       expect(count).toBeLessThanOrEqual(5);
     }
+  });
+});
+
+// ============================================================
+// Inline field names for small types (SAU-244)
+// ============================================================
+
+describe("searchSchema inline field names for small types", () => {
+  test("object type below threshold inlines field names", () => {
+    // UserEdge has 2 fields: node, cursor
+    const results = searchSchema(index, { pattern: "UserEdge", kind: "type" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toBe("type UserEdge (2 fields) { node, cursor }");
+  });
+
+  test("object type at threshold inlines field names", () => {
+    // PageInfo has 4 fields: hasNextPage, hasPreviousPage, startCursor, endCursor
+    const results = searchSchema(index, { pattern: "PageInfo", kind: "type" });
+    const pageInfo = results.find((r) => r.name === "PageInfo" && !r.parentType)!;
+    expect(pageInfo).toBeDefined();
+    expect(pageInfo.signature).toBe(
+      "type PageInfo (4 fields) { hasNextPage, hasPreviousPage, startCursor, endCursor }"
+    );
+  });
+
+  test("object type above threshold shows only count", () => {
+    // User has 6 fields — above threshold, no inline
+    const results = searchSchema(index, { pattern: "User", kind: "type" });
+    const userResult = results.find((r) => r.name === "User")!;
+    expect(userResult.signature).toBe("type User (6 fields)");
+  });
+
+  test("single-field type inlines the field name", () => {
+    const singleIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        type Single { id: ID! }
+      `)
+    );
+    const results = searchSchema(singleIndex, { pattern: "Single", kind: "type" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toBe("type Single (1 field) { id }");
+  });
+
+  test("interface type below threshold inlines field names", () => {
+    const ifaceIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        interface Node { id: ID!, createdAt: String! }
+        type Foo implements Node { id: ID!, createdAt: String!, name: String! }
+      `)
+    );
+    const results = searchSchema(ifaceIndex, { pattern: "Node", kind: "interface" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toBe("interface Node (2 fields) { id, createdAt }");
+  });
+
+  test("interface type above threshold shows only count", () => {
+    const bigIfaceIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        interface BigIface { a: String, b: String, c: String, d: String, e: String }
+        type Impl implements BigIface { a: String, b: String, c: String, d: String, e: String }
+      `)
+    );
+    const results = searchSchema(bigIfaceIndex, { pattern: "BigIface", kind: "interface" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toBe("interface BigIface (5 fields)");
+  });
+
+  test("field names are just names without types", () => {
+    const results = searchSchema(index, { pattern: "UserEdge", kind: "type" });
+    expect(results[0].signature).not.toContain("User!");
+    expect(results[0].signature).not.toContain("String!");
+  });
+
+  test("field names preserve schema order", () => {
+    const orderedIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        type Ordered { zulu: String, alpha: String, mike: String }
+      `)
+    );
+    const results = searchSchema(orderedIndex, { pattern: "Ordered", kind: "type" });
+    expect(results[0].signature).toBe("type Ordered (3 fields) { zulu, alpha, mike }");
+  });
+
+  test("zero-field type shows no inline preview", () => {
+    // Technically unusual but should handle gracefully
+    const emptyIndex = parseIntrospection(
+      introspectionFromSDL(`
+        type Query { dummy: String }
+        type Empty { _placeholder: String }
+      `)
+    );
+    // Manually remove the field to simulate 0-field edge case
+    const emptyType = emptyIndex.types.get("Empty")!;
+    emptyType.fields = [];
+    const results = searchSchema(emptyIndex, { pattern: "Empty", kind: "type" });
+    expect(results[0].signature).toBe("type Empty (0 fields)");
+  });
+
+  test("enum preview behavior is unchanged", () => {
+    const results = searchSchema(index, { pattern: "UserRole", kind: "enum" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toContain("3 values");
+    expect(results[0].signature).toContain("ADMIN");
+    expect(results[0].signature).toContain("MODERATOR");
+  });
+
+  test("input type signatures are unchanged", () => {
+    const results = searchSchema(index, { pattern: "CreateUserInput", kind: "input" });
+    expect(results.length).toBe(1);
+    expect(results[0].signature).toBe("input CreateUserInput (3 fields, 2 required)");
   });
 });
 
