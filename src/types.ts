@@ -153,6 +153,17 @@ export interface ShopifyConfig {
   apiVersion: string;
 }
 
+export interface LinearConfig {
+  apiKey: string;
+}
+
+export interface GqlProvider {
+  readonly name: string;
+  getEndpoint(): string;
+  getHeaders(): Promise<Record<string, string>>;
+  reset(): void;
+}
+
 export interface ExecuteOptions {
   signal?: AbortSignal;
   maxRetries?: number;
