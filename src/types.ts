@@ -169,3 +169,27 @@ export interface GqlResponse {
   }>;
   extensions?: Record<string, unknown>;
 }
+
+// ============================================================
+// Batch execution types
+// ============================================================
+
+export interface BatchExecuteOptions extends ExecuteOptions {
+  chunkSize?: number;
+}
+
+export interface BatchResult {
+  index: number;
+  data: unknown;
+  errors: Array<{ message: string; [key: string]: unknown }> | null;
+}
+
+export interface BatchResponse {
+  results: BatchResult[];
+  summary: {
+    total: number;
+    succeeded: number;
+    failed: number;
+    chunks: number;
+  };
+}

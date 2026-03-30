@@ -24,6 +24,7 @@ import {
   buildHeaders,
   resetToken,
   executeOperation,
+  executeBatch,
 } from "./execute.js";
 
 /**
@@ -234,6 +235,7 @@ export default function (pi: ExtensionAPI) {
       "Use variables for dynamic values instead of string interpolation.",
       "Request only the fields you need in the selection set.",
       "Check for errors in the response before processing data.",
+      "Use batch to apply the same operation to many items — provide the operation template and an array of variable sets. The extension handles aliasing and chunking automatically.",
     ],
     parameters: Type.Object({
       operation: Type.String({
@@ -241,14 +243,69 @@ export default function (pi: ExtensionAPI) {
       }),
       variables: Type.Optional(
         Type.Record(Type.String(), Type.Unknown(), {
-          description: "Variables for the operation",
+          description: "Variables for the operation (mutually exclusive with batch)",
         })
+      ),
+      batch: Type.Optional(
+        Type.Array(
+          Type.Record(Type.String(), Type.Unknown()),
+          {
+            description:
+              "Array of variable sets for batch execution. " +
+              "The extension constructs aliased operations from the template, " +
+              "handles chunking, and collects per-item results. " +
+              "Mutually exclusive with variables.",
+          }
+        )
       ),
     }),
 
     async execute(_toolCallId, params, signal) {
+      // Mutual exclusivity check
+      const hasVariables = params.variables != null && Object.keys(params.variables as object).length > 0;
+      const hasBatch = params.batch != null && (params.batch as unknown[]).length > 0;
+
+      if (hasVariables && hasBatch) {
+        throw new Error(
+          '"variables" and "batch" are mutually exclusive. ' +
+          'Use "variables" for a single operation, or "batch" for multiple operations with the same template.'
+        );
+      }
+
       const cfg = getConfig();
       const headers = await getHeaders();
+
+      // ---- Batch execution path ----
+      if (hasBatch) {
+        const batchItems = params.batch as Record<string, unknown>[];
+        const batchResponse = await executeBatch(
+          getEndpoint(cfg),
+          headers,
+          params.operation,
+          batchItems,
+          { signal }
+        );
+
+        const text = JSON.stringify(batchResponse, null, 2);
+        const { summary } = batchResponse;
+
+        let output = `Batch complete: ${summary.succeeded}/${summary.total} succeeded`;
+        if (summary.failed > 0) {
+          output += `, ${summary.failed} failed`;
+        }
+        output += ` (${summary.chunks} chunk${summary.chunks === 1 ? '' : 's'})\n\n${text}`;
+
+        return {
+          content: [{ type: "text", text: output }],
+          details: {
+            hasErrors: summary.failed > 0,
+            batch: true,
+            ...summary,
+          } as Record<string, unknown>,
+        };
+      }
+
+      // ---- Single execution path (unchanged) ----
       const { response, truncated, rawLength } = await executeOperation(
         getEndpoint(cfg),
         headers,
