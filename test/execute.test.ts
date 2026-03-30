@@ -393,6 +393,23 @@ describe("buildAliasedOperation", () => {
     expect(() => buildAliasedOperation(template, [])).toThrow();
   });
 
+  test("omits variable parens when template has no variables", () => {
+    const noVarTemplate = `query { shop { name } }`;
+    const { query } = buildAliasedOperation(noVarTemplate, [{}]);
+    // Should produce "query {" not "query() {"
+    expect(query).not.toContain("()");
+    expect(query).toMatch(/^query\s*\{/);
+    expect(query).toContain("op_0:");
+  });
+
+  test("omits variable parens with multiple no-variable batch items", () => {
+    const noVarTemplate = `query { shop { name } }`;
+    const { query } = buildAliasedOperation(noVarTemplate, [{}, {}]);
+    expect(query).not.toContain("()");
+    expect(query).toContain("op_0:");
+    expect(query).toContain("op_1:");
+  });
+
   test("handles operation with a name", () => {
     const named = `mutation UpdateItem($id: ID!, $input: InventoryItemInput!) {
       inventoryItemUpdate(id: $id, input: $input) { inventoryItem { id } }

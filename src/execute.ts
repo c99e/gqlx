@@ -173,7 +173,7 @@ export async function executeOperation(
 
     let response: GqlResponse;
     try {
-      response = JSON.parse(truncated ? rawText : responseText);
+      response = JSON.parse(responseText);
     } catch {
       response = {
         data: null,
@@ -322,7 +322,8 @@ export function buildAliasedOperation(
     }
   }
 
-  const query = `${opType}(${allVarDefs.join(', ')}) {\n  ${allFields.join('\n  ')}\n}`;
+  const varSection = allVarDefs.length > 0 ? `(${allVarDefs.join(', ')})` : '';
+  const query = `${opType}${varSection} {\n  ${allFields.join('\n  ')}\n}`;
   return { query, variables: allVariables };
 }
 
