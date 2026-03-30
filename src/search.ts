@@ -86,6 +86,23 @@ export function searchSchema(index: SchemaIndex, options: SearchOptions): Search
     interface: ["INTERFACE"],
   };
 
+  // Collect matching enum values as qualified results (e.g. CurrencyCode.EUR)
+  function collectEnumValueMatches(typeInfo: { name: string; kind: string; enumValues: { name: string; description: string | null }[] }): void {
+    if (typeInfo.kind !== "ENUM") return;
+    for (const ev of typeInfo.enumValues) {
+      if (matches(ev.name)) {
+        results.push({
+          kind: "enum",
+          name: typeInfo.name,
+          signature: `${typeInfo.name}.${ev.name}`,
+          description: ev.description,
+          parentType: typeInfo.name,
+          score: 0, // enum value matches rank lowest
+        });
+      }
+    }
+  }
+
   const shouldSearchTypes =
     kind === "all" || kind in kindToGqlKind;
 
@@ -104,11 +121,15 @@ export function searchSchema(index: SchemaIndex, options: SearchOptions): Search
           description: typeInfo.description,
           score: score(typeInfo.name),
         });
+        // Also search enum values as separate results (skip for wildcards to avoid noise)
+        if (!isWildcard) collectEnumValueMatches(typeInfo);
         continue;
       }
 
-      // Also match on field names within types (show which field matched)
+      // Also match on field names / enum values within types
       if (!isWildcard) {
+        collectEnumValueMatches(typeInfo);
+
         for (const f of typeInfo.fields) {
           if (matches(f.name)) {
             results.push({
@@ -145,7 +166,26 @@ export function searchSchema(index: SchemaIndex, options: SearchOptions): Search
     return a.name.localeCompare(b.name);
   });
 
-  return results.slice(0, limit).map(({ score: _, ...rest }) => rest);
+  const stripScore = ({ score: _, ...rest }: SearchResult & { score: number }): SearchResult => rest;
+
+  // When kind is "all", apply limit per category so no single kind dominates.
+  // Without this, types (which vastly outnumber queries/mutations in most schemas)
+  // drown out the more actionable operation results.
+  if (kind === "all") {
+    const grouped = new Map<string, Array<SearchResult & { score: number }>>();
+    for (const r of results) {
+      const bucket = grouped.get(r.kind) ?? [];
+      bucket.push(r);
+      grouped.set(r.kind, bucket);
+    }
+    const merged: SearchResult[] = [];
+    for (const [, items] of grouped) {
+      merged.push(...items.slice(0, limit).map(stripScore));
+    }
+    return merged;
+  }
+
+  return results.slice(0, limit).map(stripScore);
 }
 
 function formatKind(kind: string): string {
@@ -167,14 +207,38 @@ function formatKind(kind: string): string {
   }
 }
 
-function formatTypeSignature(t: { name: string; kind: string; enumValues: { name: string }[]; possibleTypes: string[] }): string {
+function plural(n: number, singular: string, pluralForm: string): string {
+  return n === 1 ? `${n} ${singular}` : `${n} ${pluralForm}`;
+}
+
+function countRequiredInputFields(inputFields: { type: string; defaultValue: string | null }[]): number {
+  return inputFields.filter((f) => f.type.endsWith("!") && f.defaultValue === null).length;
+}
+
+function formatTypeSignature(t: { name: string; kind: string; fields: unknown[]; inputFields: { type: string; defaultValue: string | null }[]; enumValues: { name: string }[]; possibleTypes: string[] }): string {
   const kindLabel = formatKind(t.kind);
 
   switch (t.kind) {
+    case "OBJECT":
+    case "INTERFACE": {
+      const INLINE_THRESHOLD = 4;
+      const count = t.fields.length;
+      const base = `${kindLabel} ${t.name} (${plural(count, "field", "fields")})`;
+      if (count > 0 && count <= INLINE_THRESHOLD) {
+        const names = (t.fields as { name: string }[]).map((f) => f.name).join(", ");
+        return `${base} { ${names} }`;
+      }
+      return base;
+    }
+    case "INPUT_OBJECT": {
+      const total = t.inputFields.length;
+      const required = countRequiredInputFields(t.inputFields);
+      return `input ${t.name} (${plural(total, "field", "fields")}, ${plural(required, "required", "required")})`;
+    }
     case "ENUM": {
       const vals = t.enumValues.map((v) => v.name);
       const preview = vals.length <= 6 ? vals.join(", ") : vals.slice(0, 5).join(", ") + ", ...";
-      return `enum ${t.name} { ${preview} }`;
+      return `enum ${t.name} (${plural(vals.length, "value", "values")}) { ${preview} }`;
     }
     case "UNION": {
       return `union ${t.name} = ${t.possibleTypes.join(" | ")}`;

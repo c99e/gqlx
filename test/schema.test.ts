@@ -1,6 +1,6 @@
 import { test, expect, describe } from "bun:test";
 import { parseIntrospection, renderTypeRef, formatTypeSDL, formatOperationSignature } from "../src/schema.js";
-import { TEST_INTROSPECTION } from "./helpers.js";
+import { TEST_INTROSPECTION, introspectionFromSDL } from "./helpers.js";
 import type { IntrospectionTypeRef } from "../src/types.js";
 
 const index = parseIntrospection(TEST_INTROSPECTION);
@@ -204,7 +204,7 @@ describe("formatTypeSDL", () => {
 
   test("expands referenced enums when index provided", () => {
     const user = index.types.get("User")!;
-    const sdl = formatTypeSDL(user, index);
+    const sdl = formatTypeSDL(user, { index });
     expect(sdl).toContain("--- Referenced Types ---");
     expect(sdl).toContain("enum UserRole {");
   });
@@ -219,5 +219,380 @@ describe("formatTypeSDL", () => {
     const user = index.types.get("User")!;
     const sdl = formatTypeSDL(user);
     expect(sdl).toContain("posts(first: Int): [Post!]!");
+  });
+});
+
+// ============================================================
+// formatTypeSDL — compact vs verbose
+// ============================================================
+
+describe("formatTypeSDL compact vs verbose", () => {
+  const DESCRIBED_SDL = `
+    type Query {
+      "Get a product by ID"
+      product(id: ID!): Product
+    }
+
+    type Mutation {
+      "Create a new product"
+      createProduct(input: CreateProductInput!): Product!
+    }
+
+    """A product in the catalog"""
+    type Product {
+      "Unique identifier"
+      id: ID!
+      "Product display name"
+      title: String!
+      "Current status"
+      status: ProductStatus!
+      "Product tags"
+      tags: [String!]!
+    }
+
+    """Status of a product"""
+    enum ProductStatus {
+      "Product is active"
+      ACTIVE
+      "Product is in draft"
+      DRAFT
+      ARCHIVED
+    }
+
+    """Input for creating a product"""
+    input CreateProductInput {
+      "Product display name"
+      title: String!
+      "Initial status"
+      status: ProductStatus
+    }
+  `;
+  const describedIndex = parseIntrospection(introspectionFromSDL(DESCRIBED_SDL));
+
+  // --- compact mode (default) ---
+
+  test("compact mode omits type-level description", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product);
+    expect(sdl).not.toContain("A product in the catalog");
+  });
+
+  test("compact mode omits field descriptions", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product);
+    expect(sdl).not.toContain("Unique identifier");
+    expect(sdl).not.toContain("Product display name");
+    expect(sdl).not.toContain("Current status");
+  });
+
+  test("compact mode shows field names, types, and arguments", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product);
+    expect(sdl).toContain("id: ID!");
+    expect(sdl).toContain("title: String!");
+    expect(sdl).toContain("status: ProductStatus!");
+    expect(sdl).toContain("tags: [String!]!");
+  });
+
+  test("compact mode expands referenced types when index provided", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { index: describedIndex });
+    expect(sdl).toContain("--- Referenced Types ---");
+    expect(sdl).toContain("enum ProductStatus {");
+  });
+
+  test("compact enum omits value descriptions", () => {
+    const status = describedIndex.types.get("ProductStatus")!;
+    const sdl = formatTypeSDL(status);
+    expect(sdl).not.toContain("# Product is active");
+    expect(sdl).not.toContain("# Status of a product");
+    expect(sdl).toContain("ACTIVE");
+    expect(sdl).toContain("DRAFT");
+  });
+
+  test("compact input omits field descriptions", () => {
+    const input = describedIndex.types.get("CreateProductInput")!;
+    const sdl = formatTypeSDL(input);
+    expect(sdl).not.toContain("# Input for creating a product");
+    expect(sdl).not.toContain("# Product display name");
+    expect(sdl).toContain("title: String!");
+  });
+
+  // --- verbose mode ---
+
+  test("verbose mode includes type-level description", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { verbose: true });
+    expect(sdl).toContain("# A product in the catalog");
+  });
+
+  test("verbose mode includes field descriptions", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { verbose: true });
+    expect(sdl).toContain("# Unique identifier");
+    expect(sdl).toContain("# Product display name");
+    expect(sdl).toContain("# Current status");
+  });
+
+  test("verbose mode expands referenced types when index provided", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { index: describedIndex, verbose: true });
+    expect(sdl).toContain("--- Referenced Types ---");
+    expect(sdl).toContain("enum ProductStatus {");
+  });
+
+  test("verbose enum includes value descriptions", () => {
+    const status = describedIndex.types.get("ProductStatus")!;
+    const sdl = formatTypeSDL(status, { verbose: true });
+    expect(sdl).toContain("# Status of a product");
+    expect(sdl).toContain("# Product is active");
+    expect(sdl).toContain("ACTIVE");
+  });
+
+  test("verbose input includes field descriptions", () => {
+    const input = describedIndex.types.get("CreateProductInput")!;
+    const sdl = formatTypeSDL(input, { verbose: true });
+    expect(sdl).toContain("# Input for creating a product");
+    expect(sdl).toContain("# Product display name");
+  });
+
+  // --- referenced type verbosity propagation ---
+
+  test("referenced types in compact mode omit descriptions", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { index: describedIndex });
+    expect(sdl).toContain("enum ProductStatus {");
+    expect(sdl).not.toContain("# Status of a product");
+    expect(sdl).not.toContain("# Product is active");
+  });
+
+  test("referenced types in verbose mode include descriptions", () => {
+    const product = describedIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { index: describedIndex, verbose: true });
+    expect(sdl).toContain("enum ProductStatus {");
+    expect(sdl).toContain("# Status of a product");
+    expect(sdl).toContain("# Product is active");
+  });
+});
+
+// ============================================================
+// formatTypeSDL — pattern filter (SAU-242)
+// ============================================================
+
+describe("formatTypeSDL pattern filter", () => {
+  // Schema with a type that has many fields for pattern testing
+  const LARGE_SDL = `
+    type Query {
+      product(id: ID!): Product
+    }
+
+    type Product {
+      id: ID!
+      title: String!
+      description: String
+      handle: String!
+      vendor: String
+      productType: String
+      status: ProductStatus!
+      tags: [String!]!
+      createdAt: String!
+      updatedAt: String!
+      publishedAt: String
+      priceRange: PriceRange!
+      images(first: Int): [Image!]!
+      variants(first: Int): [Variant!]!
+      metafields(namespace: String, first: Int): [Metafield!]!
+    }
+
+    type PriceRange {
+      minPrice: Money!
+      maxPrice: Money!
+    }
+
+    type Money {
+      amount: String!
+      currencyCode: String!
+    }
+
+    type Image {
+      id: ID!
+      url: String!
+      altText: String
+    }
+
+    type Variant {
+      id: ID!
+      title: String!
+      price: Money!
+    }
+
+    type Metafield {
+      id: ID!
+      namespace: String!
+      key: String!
+      value: String!
+    }
+
+    enum ProductStatus {
+      ACTIVE
+      DRAFT
+      ARCHIVED
+    }
+
+    input ProductInput {
+      title: String!
+      description: String
+      handle: String
+      vendor: String
+      productType: String
+      status: ProductStatus
+      tags: [String!]
+    }
+  `;
+  const largeIndex = parseIntrospection(introspectionFromSDL(LARGE_SDL));
+
+  test("filters object type fields by name substring", () => {
+    const product = largeIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { pattern: "price" });
+    expect(sdl).toContain("priceRange");
+    expect(sdl).not.toContain("title");
+    expect(sdl).not.toContain("description");
+    expect(sdl).not.toContain("tags");
+  });
+
+  test("pattern matching is case-insensitive", () => {
+    const product = largeIndex.types.get("Product")!;
+    const lower = formatTypeSDL(product, { pattern: "price" });
+    const upper = formatTypeSDL(product, { pattern: "PRICE" });
+    const mixed = formatTypeSDL(product, { pattern: "Price" });
+    expect(lower).toBe(upper);
+    expect(lower).toBe(mixed);
+  });
+
+  test("filters fields by type substring", () => {
+    const product = largeIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { pattern: "Image" });
+    expect(sdl).toContain("images");
+    expect(sdl).not.toContain("title");
+    expect(sdl).not.toContain("vendor");
+  });
+
+  test("matches field argument types", () => {
+    const product = largeIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { pattern: "namespace" });
+    // metafields has a 'namespace' argument
+    expect(sdl).toContain("metafields");
+    expect(sdl).not.toContain("title");
+    expect(sdl).not.toContain("vendor");
+  });
+
+  test("no matching fields produces empty body", () => {
+    const product = largeIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { pattern: "xyznonexistent" });
+    expect(sdl).toContain("type Product");
+    expect(sdl).toContain("{");
+    expect(sdl).toContain("}");
+    // No field lines between braces
+    const fieldLines = sdl.split("\n").filter((l) => l.startsWith("  ") && !l.startsWith("  #"));
+    expect(fieldLines.length).toBe(0);
+  });
+
+  test("omitting pattern returns all fields unchanged", () => {
+    const product = largeIndex.types.get("Product")!;
+    const withPattern = formatTypeSDL(product);
+    const withoutPattern = formatTypeSDL(product, {});
+    expect(withPattern).toBe(withoutPattern);
+    expect(withPattern).toContain("title");
+    expect(withPattern).toContain("priceRange");
+    expect(withPattern).toContain("images");
+  });
+
+  test("filters input type fields by name substring", () => {
+    const input = largeIndex.types.get("ProductInput")!;
+    const sdl = formatTypeSDL(input, { pattern: "title" });
+    expect(sdl).toContain("title");
+    expect(sdl).not.toContain("vendor");
+    expect(sdl).not.toContain("tags");
+  });
+
+  test("filters input type fields by type substring", () => {
+    const input = largeIndex.types.get("ProductInput")!;
+    const sdl = formatTypeSDL(input, { pattern: "ProductStatus" });
+    expect(sdl).toContain("status");
+    expect(sdl).not.toContain("title");
+  });
+
+  test("pattern with compact mode works correctly", () => {
+    const product = largeIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { pattern: "price", verbose: false });
+    expect(sdl).toContain("priceRange");
+    expect(sdl).not.toContain("title");
+    // Compact mode — no descriptions
+    expect(sdl).not.toContain("#");
+  });
+
+  test("pattern with verbose mode works correctly", () => {
+    const describedSDL = `
+      type Query { product(id: ID!): Product }
+      """A product"""
+      type Product {
+        "Unique identifier"
+        id: ID!
+        "Product display name"
+        title: String!
+        "Current status"
+        status: ProductStatus!
+      }
+      enum ProductStatus { ACTIVE DRAFT }
+    `;
+    const idx = parseIntrospection(introspectionFromSDL(describedSDL));
+    const product = idx.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { pattern: "title", verbose: true });
+    expect(sdl).toContain("title: String!");
+    expect(sdl).toContain("# Product display name");
+    expect(sdl).not.toContain("id: ID!");
+    expect(sdl).not.toContain("status");
+  });
+
+  test("pattern does not affect enum type output", () => {
+    const status = largeIndex.types.get("ProductStatus")!;
+    const withPattern = formatTypeSDL(status, { pattern: "ACTIVE" });
+    const withoutPattern = formatTypeSDL(status);
+    expect(withPattern).toBe(withoutPattern);
+  });
+
+  test("pattern does not affect union type output", () => {
+    const unionSDL = `
+      type Query { search: SearchResult }
+      union SearchResult = Product | Image
+      type Product { id: ID! }
+      type Image { id: ID! }
+    `;
+    const idx = parseIntrospection(introspectionFromSDL(unionSDL));
+    const union = idx.types.get("SearchResult")!;
+    const withPattern = formatTypeSDL(union, { pattern: "Product" });
+    const withoutPattern = formatTypeSDL(union);
+    expect(withPattern).toBe(withoutPattern);
+  });
+
+  test("pattern does not affect scalar type output", () => {
+    const scalarSDL = `
+      type Query { dummy: String }
+      scalar JSON
+    `;
+    const idx = parseIntrospection(introspectionFromSDL(scalarSDL));
+    const scalar = idx.types.get("JSON")!;
+    const withPattern = formatTypeSDL(scalar, { pattern: "anything" });
+    const withoutPattern = formatTypeSDL(scalar);
+    expect(withPattern).toBe(withoutPattern);
+  });
+
+  test("pattern with index expands only referenced types from matching fields", () => {
+    const product = largeIndex.types.get("Product")!;
+    const sdl = formatTypeSDL(product, { index: largeIndex, pattern: "price" });
+    expect(sdl).toContain("priceRange");
+    // PriceRange references Money — but referenced types are for the type, not filtered
+    // The main point: it should still expand referenced types from filtered fields
+    expect(sdl).toContain("--- Referenced Types ---");
   });
 });
