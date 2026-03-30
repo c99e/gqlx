@@ -1,5 +1,8 @@
 /**
- * pi-graphql: GraphQL schema exploration and query execution for Shopify.
+ * pi-graphql: GraphQL schema exploration and query execution.
+ *
+ * Supports multiple GraphQL providers (Shopify, Linear) via auto-detection
+ * from environment variables. See providers.ts for the abstraction.
  *
  * Registers three tools:
  *   gql_search  — Search the schema for types, queries, mutations
@@ -14,18 +17,11 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 
-import type { SchemaIndex, ShopifyConfig } from "./types.js";
+import type { SchemaIndex, GqlProvider } from "./types.js";
 import { fetchIntrospection, parseIntrospection, formatTypeSDL } from "./schema.js";
 import { searchSchema, formatSearchResults } from "./search.js";
-import {
-  configFromEnv,
-  getEndpoint,
-  getToken,
-  buildHeaders,
-  resetToken,
-  executeOperation,
-  executeBatch,
-} from "./execute.js";
+import { executeOperation, executeBatch } from "./execute.js";
+import { detectProvider } from "./providers.js";
 
 /**
  * Parse a .env file and merge into process.env.
@@ -63,21 +59,15 @@ export default function (pi: ExtensionAPI) {
   // ---------------------------------------------------------
   // State: cached per session
   // ---------------------------------------------------------
-  let config: ShopifyConfig | null = null;
+  let provider: GqlProvider | null = null;
   let schemaIndex: SchemaIndex | null = null;
   let schemaError: string | null = null;
 
-  function getConfig(): ShopifyConfig {
-    if (!config) {
-      config = configFromEnv();
+  function getProvider(): GqlProvider {
+    if (!provider) {
+      provider = detectProvider();
     }
-    return config;
-  }
-
-  async function getHeaders(): Promise<Record<string, string>> {
-    const cfg = getConfig();
-    const token = await getToken(cfg);
-    return buildHeaders(token);
+    return provider;
   }
 
   async function getSchema(signal?: AbortSignal): Promise<SchemaIndex> {
@@ -85,9 +75,9 @@ export default function (pi: ExtensionAPI) {
     if (schemaError) throw new Error(schemaError);
 
     try {
-      const cfg = getConfig();
-      const headers = await getHeaders();
-      const introspection = await fetchIntrospection(getEndpoint(cfg), headers, signal);
+      const p = getProvider();
+      const headers = await p.getHeaders();
+      const introspection = await fetchIntrospection(p.getEndpoint(), headers, signal);
       schemaIndex = parseIntrospection(introspection);
       return schemaIndex;
     } catch (err) {
@@ -98,10 +88,10 @@ export default function (pi: ExtensionAPI) {
 
   // Load .env and reset cache on new session
   pi.on("session_start", async (_event, ctx) => {
-    config = null;
+    if (provider) provider.reset();
+    provider = null;
     schemaIndex = null;
     schemaError = null;
-    resetToken();
     loadEnvFile(resolve(ctx.cwd, ".env"));
   });
 
@@ -272,14 +262,14 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
-      const cfg = getConfig();
-      const headers = await getHeaders();
+      const p = getProvider();
+      const headers = await p.getHeaders();
 
       // ---- Batch execution path ----
       if (hasBatch) {
         const batchItems = params.batch as Record<string, unknown>[];
         const batchResponse = await executeBatch(
-          getEndpoint(cfg),
+          p.getEndpoint(),
           headers,
           params.operation,
           batchItems,
@@ -307,7 +297,7 @@ export default function (pi: ExtensionAPI) {
 
       // ---- Single execution path (unchanged) ----
       const { response, truncated, rawLength } = await executeOperation(
-        getEndpoint(cfg),
+        p.getEndpoint(),
         headers,
         params.operation,
         params.variables as Record<string, unknown> | undefined,

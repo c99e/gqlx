@@ -1,10 +1,9 @@
-import { test, expect, describe, beforeEach, spyOn } from "bun:test";
+import { test, expect, describe, spyOn } from "bun:test";
 import {
   configFromEnv,
   getEndpoint,
-  getToken,
+  exchangeToken,
   buildHeaders,
-  resetToken,
   executeOperation,
   buildAliasedOperation,
   collectBatchResults,
@@ -84,20 +83,16 @@ describe("buildHeaders", () => {
 });
 
 // ============================================================
-// getToken
+// exchangeToken
 // ============================================================
 
-describe("getToken", () => {
+describe("exchangeToken", () => {
   const config = {
     store: "test.myshopify.com",
     clientId: "cid",
     clientSecret: "csecret",
     apiVersion: "2026-01",
   };
-
-  beforeEach(() => {
-    resetToken();
-  });
 
   test("exchanges credentials for token", async () => {
     let capturedUrl: string | undefined;
@@ -109,7 +104,7 @@ describe("getToken", () => {
       return new Response(JSON.stringify({ access_token: "shp_tok_123" }));
     });
 
-    const token = await getToken(config);
+    const token = await exchangeToken(config);
     expect(token).toBe("shp_tok_123");
     expect(capturedUrl).toBe("https://test.myshopify.com/admin/oauth/access_token");
     expect(capturedBody.grant_type).toBe("client_credentials");
@@ -119,46 +114,12 @@ describe("getToken", () => {
     spy.mockRestore();
   });
 
-  test("caches token on subsequent calls", async () => {
-    let callCount = 0;
-
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
-      callCount++;
-      return new Response(JSON.stringify({ access_token: "cached_tok" }));
-    });
-
-    await getToken(config);
-    await getToken(config);
-    expect(callCount).toBe(1);
-
-    spy.mockRestore();
-  });
-
-  test("resetToken clears cache", async () => {
-    let callCount = 0;
-
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
-      callCount++;
-      return new Response(JSON.stringify({ access_token: `tok_${callCount}` }));
-    });
-
-    const t1 = await getToken(config);
-    resetToken();
-    const t2 = await getToken(config);
-
-    expect(t1).toBe("tok_1");
-    expect(t2).toBe("tok_2");
-    expect(callCount).toBe(2);
-
-    spy.mockRestore();
-  });
-
   test("throws on failed token exchange", async () => {
     const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
       return new Response("Unauthorized", { status: 401, statusText: "Unauthorized" });
     });
 
-    await expect(getToken(config)).rejects.toThrow("Shopify token exchange failed: 401");
+    await expect(exchangeToken(config)).rejects.toThrow("Shopify token exchange failed: 401");
 
     spy.mockRestore();
   });

@@ -48,18 +48,10 @@ export function getEndpoint(config: ShopifyConfig): string {
 }
 
 // ============================================================
-// Token exchange (client_credentials)
+// Token exchange (client_credentials) — stateless, no caching
 // ============================================================
 
-let cachedToken: string | null = null;
-
-export function resetToken(): void {
-  cachedToken = null;
-}
-
-export async function getToken(config: ShopifyConfig): Promise<string> {
-  if (cachedToken) return cachedToken;
-
+export async function exchangeToken(config: ShopifyConfig): Promise<string> {
   const tokenUrl = `https://${config.store}/admin/oauth/access_token`;
   const res = await fetch(tokenUrl, {
     method: 'POST',
@@ -79,8 +71,7 @@ export async function getToken(config: ShopifyConfig): Promise<string> {
   }
 
   const json = (await res.json()) as { access_token: string };
-  cachedToken = json.access_token;
-  return cachedToken;
+  return json.access_token;
 }
 
 export function buildHeaders(token: string): Record<string, string> {
