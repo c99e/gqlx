@@ -1,21 +1,15 @@
-import { test, expect, describe, beforeEach, spyOn } from "bun:test";
+import { test, expect, describe, spyOn } from "bun:test";
 import {
   ShopifyProvider,
   LinearProvider,
   detectProvider,
 } from "../src/providers.js";
-import { resetToken } from "../src/execute.js";
 
 // ============================================================
 // ShopifyProvider — config validation
 // ============================================================
 
 describe("ShopifyProvider", () => {
-  // Reset shared module-level token before each test to avoid cross-contamination
-  beforeEach(() => {
-    resetToken();
-  });
-
   test("throws when SHOPIFY_STORE is missing", () => {
     expect(() => new ShopifyProvider({})).toThrow("SHOPIFY_STORE");
   });
@@ -81,6 +75,27 @@ describe("ShopifyProvider", () => {
     spy.mockRestore();
   });
 
+  // --- caching ---
+
+  test("caches token across multiple getHeaders calls", async () => {
+    let callCount = 0;
+    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+      callCount++;
+      return new Response(JSON.stringify({ access_token: "cached_tok" }));
+    });
+
+    const p = new ShopifyProvider({
+      SHOPIFY_STORE: "test.myshopify.com",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+    });
+    await p.getHeaders();
+    await p.getHeaders();
+    expect(callCount).toBe(1);
+
+    spy.mockRestore();
+  });
+
   // --- reset ---
 
   test("reset clears cached token so next getHeaders re-fetches", async () => {
@@ -99,6 +114,77 @@ describe("ShopifyProvider", () => {
     p.reset();
     await p.getHeaders();
     expect(callCount).toBe(2);
+
+    spy.mockRestore();
+  });
+
+  // --- instance isolation ---
+
+  test("two instances have independent token caches", async () => {
+    let callCount = 0;
+    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+      callCount++;
+      return new Response(JSON.stringify({ access_token: `tok_${callCount}` }));
+    });
+
+    const env = {
+      SHOPIFY_STORE: "test.myshopify.com",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+    };
+    const p1 = new ShopifyProvider(env);
+    const p2 = new ShopifyProvider(env);
+
+    const h1 = await p1.getHeaders();
+    const h2 = await p2.getHeaders();
+
+    expect(callCount).toBe(2);
+    expect(h1["X-Shopify-Access-Token"]).toBe("tok_1");
+    expect(h2["X-Shopify-Access-Token"]).toBe("tok_2");
+
+    spy.mockRestore();
+  });
+
+  test("resetting one instance does not affect another", async () => {
+    let callCount = 0;
+    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+      callCount++;
+      return new Response(JSON.stringify({ access_token: `tok_${callCount}` }));
+    });
+
+    const env = {
+      SHOPIFY_STORE: "test.myshopify.com",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+    };
+    const p1 = new ShopifyProvider(env);
+    const p2 = new ShopifyProvider(env);
+
+    await p1.getHeaders();
+    await p2.getHeaders();
+    p1.reset();
+
+    // p2 should still use its cached token
+    const h2 = await p2.getHeaders();
+    expect(h2["X-Shopify-Access-Token"]).toBe("tok_2");
+    expect(callCount).toBe(2);
+
+    spy.mockRestore();
+  });
+
+  // --- error propagation ---
+
+  test("getHeaders throws on failed token exchange", async () => {
+    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response("Unauthorized", { status: 401, statusText: "Unauthorized" });
+    });
+
+    const p = new ShopifyProvider({
+      SHOPIFY_STORE: "test.myshopify.com",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+    });
+    await expect(p.getHeaders()).rejects.toThrow("Shopify token exchange failed: 401");
 
     spy.mockRestore();
   });

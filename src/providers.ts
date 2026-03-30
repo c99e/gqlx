@@ -2,9 +2,8 @@ import type { GqlProvider, LinearConfig, ShopifyConfig } from './types.js';
 import {
   configFromEnv,
   getEndpoint as shopifyGetEndpoint,
-  getToken,
+  exchangeToken,
   buildHeaders as shopifyBuildHeaders,
-  resetToken,
 } from './execute.js';
 
 // ============================================================
@@ -14,6 +13,7 @@ import {
 export class ShopifyProvider implements GqlProvider {
   readonly name = 'shopify';
   private config: ShopifyConfig;
+  private cachedToken: string | null = null;
 
   constructor(env: Record<string, string | undefined> = process.env) {
     this.config = configFromEnv(env);
@@ -24,12 +24,14 @@ export class ShopifyProvider implements GqlProvider {
   }
 
   async getHeaders(): Promise<Record<string, string>> {
-    const token = await getToken(this.config);
-    return shopifyBuildHeaders(token);
+    if (!this.cachedToken) {
+      this.cachedToken = await exchangeToken(this.config);
+    }
+    return shopifyBuildHeaders(this.cachedToken);
   }
 
   reset(): void {
-    resetToken();
+    this.cachedToken = null;
   }
 }
 
