@@ -1,5 +1,6 @@
 import { test, expect, describe } from "bun:test";
-import { parseIntrospection, renderTypeRef, formatTypeSDL, formatOperationSignature } from "../src/schema.js";
+import { parseIntrospection, renderTypeRef } from "../src/schema.js";
+import { formatTypeSDL, formatOperationSignature } from "../src/format.js";
 import { TEST_INTROSPECTION, introspectionFromSDL } from "./helpers.js";
 import type { IntrospectionTypeRef } from "../src/types.js";
 

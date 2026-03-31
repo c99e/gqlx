@@ -18,10 +18,11 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 
 import type { SchemaIndex, GqlProvider } from "./types.js";
-import { fetchIntrospection, parseIntrospection, formatTypeSDL } from "./schema.js";
-import { searchSchema, formatSearchResults } from "./search.js";
+import { fetchIntrospection, parseIntrospection } from "./schema.js";
+import { searchSchema } from "./search.js";
 import { executeOperation, executeBatch } from "./execute.js";
 import { detectProvider } from "./providers.js";
+import { formatSearchResults, formatTypeSDL, formatExecuteResponse, formatBatchResponse } from "./format.js";
 
 /**
  * Parse a .env file and merge into process.env.
@@ -276,14 +277,8 @@ export default function (pi: ExtensionAPI) {
           { signal }
         );
 
-        const text = JSON.stringify(batchResponse, null, 2);
+        const output = formatBatchResponse(batchResponse);
         const { summary } = batchResponse;
-
-        let output = `Batch complete: ${summary.succeeded}/${summary.total} succeeded`;
-        if (summary.failed > 0) {
-          output += `, ${summary.failed} failed`;
-        }
-        output += ` (${summary.chunks} chunk${summary.chunks === 1 ? '' : 's'})\n\n${text}`;
 
         return {
           content: [{ type: "text", text: output }],
@@ -304,17 +299,8 @@ export default function (pi: ExtensionAPI) {
         { signal }
       );
 
-      let text = JSON.stringify(response, null, 2);
-
-      if (truncated) {
-        text += `\n\n[Response truncated: showing first 50KB of ${rawLength} bytes]`;
-      }
-
+      const text = formatExecuteResponse(response, truncated, rawLength);
       const hasErrors = Array.isArray(response.errors) && response.errors.length > 0;
-      if (hasErrors) {
-        const errorSummary = response.errors!.map((e) => e.message).join("; ");
-        text = `GraphQL errors: ${errorSummary}\n\nFull response:\n${text}`;
-      }
 
       return {
         content: [{ type: "text", text }],

@@ -1,6 +1,7 @@
 import { test, expect, describe } from "bun:test";
 import { parseIntrospection } from "../src/schema.js";
-import { searchSchema, formatSearchResults } from "../src/search.js";
+import { searchSchema } from "../src/search.js";
+import { formatSearchResults } from "../src/format.js";
 import { TEST_INTROSPECTION, introspectionFromSDL } from "./helpers.js";
 
 const index = parseIntrospection(TEST_INTROSPECTION);
