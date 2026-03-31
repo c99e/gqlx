@@ -59,7 +59,7 @@ describe("ShopifyProvider", () => {
   // --- headers ---
 
   test("getHeaders returns Shopify auth headers", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response(JSON.stringify({ access_token: "shp_tok" }));
     });
 
@@ -79,7 +79,7 @@ describe("ShopifyProvider", () => {
 
   test("caches token across multiple getHeaders calls", async () => {
     let callCount = 0;
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       callCount++;
       return new Response(JSON.stringify({ access_token: "cached_tok" }));
     });
@@ -100,7 +100,7 @@ describe("ShopifyProvider", () => {
 
   test("reset clears cached token so next getHeaders re-fetches", async () => {
     let callCount = 0;
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       callCount++;
       return new Response(JSON.stringify({ access_token: `tok_${callCount}` }));
     });
@@ -122,7 +122,7 @@ describe("ShopifyProvider", () => {
 
   test("two instances have independent token caches", async () => {
     let callCount = 0;
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       callCount++;
       return new Response(JSON.stringify({ access_token: `tok_${callCount}` }));
     });
@@ -147,7 +147,7 @@ describe("ShopifyProvider", () => {
 
   test("resetting one instance does not affect another", async () => {
     let callCount = 0;
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       callCount++;
       return new Response(JSON.stringify({ access_token: `tok_${callCount}` }));
     });
@@ -175,7 +175,7 @@ describe("ShopifyProvider", () => {
   // --- error propagation ---
 
   test("getHeaders throws on failed token exchange", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response("Unauthorized", { status: 401, statusText: "Unauthorized" });
     });
 

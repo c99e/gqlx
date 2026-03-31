@@ -98,7 +98,7 @@ describe("exchangeToken", () => {
     let capturedUrl: string | undefined;
     let capturedBody: any;
 
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async (url: any, init: any) => {
       capturedUrl = url as string;
       capturedBody = JSON.parse((init as any).body);
       return new Response(JSON.stringify({ access_token: "shp_tok_123" }));
@@ -115,7 +115,7 @@ describe("exchangeToken", () => {
   });
 
   test("throws on failed token exchange", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response("Unauthorized", { status: 401, statusText: "Unauthorized" });
     });
 
@@ -136,7 +136,7 @@ describe("executeOperation", () => {
   test("sends correct request", async () => {
     let capturedBody: any;
 
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async (_url: any, init: any) => {
       capturedBody = JSON.parse((init as any).body);
       return new Response(JSON.stringify({ data: { shop: { name: "Test" } } }));
     });
@@ -150,7 +150,7 @@ describe("executeOperation", () => {
   test("includes auth header", async () => {
     let capturedHeaders: any;
 
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async (_url: any, init: any) => {
       capturedHeaders = (init as any).headers;
       return new Response(JSON.stringify({ data: null }));
     });
@@ -164,7 +164,7 @@ describe("executeOperation", () => {
   test("includes variables in request body", async () => {
     let capturedBody: any;
 
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async (_url: any, init: any) => {
       capturedBody = JSON.parse((init as any).body);
       return new Response(JSON.stringify({ data: null }));
     });
@@ -180,7 +180,7 @@ describe("executeOperation", () => {
   test("returns parsed response", async () => {
     const mockData = { data: { shop: { name: "Test Store" } } };
 
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response(JSON.stringify(mockData));
     });
 
@@ -196,7 +196,7 @@ describe("executeOperation", () => {
   });
 
   test("throws on HTTP error", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response("Unauthorized", { status: 401, statusText: "Unauthorized" });
     });
 
@@ -210,7 +210,7 @@ describe("executeOperation", () => {
   test("retries on 429 rate limit", async () => {
     let callCount = 0;
 
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       callCount++;
       if (callCount === 1) {
         return new Response("Rate limited", { status: 429, headers: { "Retry-After": "0.01" } });
@@ -226,7 +226,7 @@ describe("executeOperation", () => {
   });
 
   test("gives up after max retries on 429", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response("Rate limited", { status: 429, headers: { "Retry-After": "0.01" } });
     });
 
@@ -238,7 +238,7 @@ describe("executeOperation", () => {
   });
 
   test("handles GraphQL errors in response", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response(JSON.stringify({ data: null, errors: [{ message: "Not found" }] }));
     });
 
@@ -251,7 +251,7 @@ describe("executeOperation", () => {
   test("flags truncated large responses", async () => {
     const largeData = { data: { items: Array(1000).fill({ id: "x".repeat(100) }) } };
 
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response(JSON.stringify(largeData));
     });
 
@@ -446,7 +446,7 @@ describe("executeBatch", () => {
   const template = `mutation($id: ID!) { deleteItem(id: $id) { deletedId } }`;
 
   test("sends aliased operation and returns unified results", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async (_url: any, init: any) => {
       return new Response(
         JSON.stringify({
           data: {
@@ -474,7 +474,7 @@ describe("executeBatch", () => {
   test("chunks large batches into multiple requests", async () => {
     let callCount = 0;
 
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async (_url: any, init: any) => {
       callCount++;
       const body = JSON.parse((init as any).body);
       // Count how many aliases are in this chunk by counting op_ keys in query
@@ -499,7 +499,7 @@ describe("executeBatch", () => {
   });
 
   test("tracks failed items in summary", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response(
         JSON.stringify({
           data: {
@@ -521,7 +521,7 @@ describe("executeBatch", () => {
   });
 
   test("propagates fetch errors", async () => {
-    const spy = spyOn(globalThis, "fetch").mockImplementation(async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
       return new Response("Server Error", { status: 500, statusText: "Internal Server Error" });
     });
 
