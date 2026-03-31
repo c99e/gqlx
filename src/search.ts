@@ -1,5 +1,6 @@
 import type { SchemaIndex, SearchOptions, SearchResult } from "./types.js";
-import { formatArgs } from "./schema.js";
+import { formatArgs } from "./format.js";
+
 
 /**
  * Search the schema index for types, queries, mutations, fields.
@@ -248,33 +249,4 @@ function formatTypeSignature(t: { name: string; kind: string; fields: unknown[];
   }
 }
 
-/**
- * Format search results into a readable string for the LLM.
- */
-export function formatSearchResults(results: SearchResult[]): string {
-  if (results.length === 0) return "No results found.";
 
-  // Group by kind
-  const groups = new Map<string, SearchResult[]>();
-  for (const r of results) {
-    const existing = groups.get(r.kind) ?? [];
-    existing.push(r);
-    groups.set(r.kind, existing);
-  }
-
-  const lines: string[] = [];
-  const order = ["query", "mutation", "subscription", "type", "interface", "input", "enum", "union", "scalar"];
-
-  for (const kind of order) {
-    const items = groups.get(kind);
-    if (!items) continue;
-
-    lines.push(`${kind.charAt(0).toUpperCase() + kind.slice(1)}:`);
-    for (const item of items) {
-      lines.push(`  ${item.signature}`);
-    }
-    lines.push("");
-  }
-
-  return lines.join("\n").trimEnd();
-}

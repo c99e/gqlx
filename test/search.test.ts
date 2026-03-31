@@ -1,6 +1,6 @@
 import { test, expect, describe } from "bun:test";
 import { parseIntrospection } from "../src/schema.js";
-import { searchSchema, formatSearchResults } from "../src/search.js";
+import { searchSchema } from "../src/search.js";
 import { TEST_INTROSPECTION, introspectionFromSDL } from "./helpers.js";
 
 const index = parseIntrospection(TEST_INTROSPECTION);
@@ -576,28 +576,4 @@ describe("searchSchema inline field names for small types", () => {
   });
 });
 
-// ============================================================
-// formatSearchResults
-// ============================================================
 
-describe("formatSearchResults", () => {
-  test("groups results by kind", () => {
-    const results = searchSchema(index, { pattern: "user" });
-    const formatted = formatSearchResults(results);
-    expect(formatted).toContain("Query:");
-    expect(formatted).toContain("Mutation:");
-  });
-
-  test("empty results", () => {
-    const formatted = formatSearchResults([]);
-    expect(formatted).toBe("No results found.");
-  });
-
-  test("indents signatures", () => {
-    const results = searchSchema(index, { pattern: "*", kind: "query" });
-    const formatted = formatSearchResults(results);
-    const lines = formatted.split("\n");
-    const signatureLines = lines.filter((l) => l.startsWith("  "));
-    expect(signatureLines.length).toBeGreaterThan(0);
-  });
-});
