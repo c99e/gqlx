@@ -152,30 +152,6 @@ pi -e ./
 bunx tsc --noEmit
 ```
 
-### Project structure
-
-```
-src/
-├── index.ts      # Pi extension entry (tool registration)
-├── types.ts      # All TypeScript types
-├── providers.ts  # Provider abstraction (Shopify, Linear)
-├── schema.ts     # Introspection fetching and parsing
-├── search.ts     # Schema search logic
-├── format.ts     # Output formatting (SDL, search results, responses)
-└── execute.ts    # GraphQL execution, batch operations, retry logic
-test/
-├── helpers.ts    # Test fixtures (builds introspection from SDL)
-├── schema.test.ts
-├── search.test.ts
-├── format.test.ts
-├── providers.test.ts
-└── execute.test.ts
-```
-
-Core logic is **pure and testable** — no pi imports. The thin `index.ts` wires everything into pi's tool API.
-
-> **Note:** The extension runs inside pi's Node.js runtime. Use standard Web/Node APIs (`fetch`, `node:fs`), not Bun-specific ones.
-
 ## License
 
 MIT
