@@ -166,38 +166,24 @@ function collectReferencedTypes(typeInfo: TypeInfo, index: SchemaIndex): TypeInf
 }
 
 // ============================================================
-// Search result formatting
+// Search result sorting
 // ============================================================
 
+const KIND_ORDER = ["query", "mutation", "subscription", "type", "interface", "input", "enum", "union", "scalar"];
+
 /**
- * Format search results into a readable string for the LLM.
+ * Sort search results by kind in canonical order.
+ * Preserves relative order within the same kind.
  */
-export function formatSearchResults(results: SearchResult[]): string {
-  if (results.length === 0) return "No results found.";
+export function sortSearchResults(results: SearchResult[]): SearchResult[] {
+  if (results.length === 0) return [];
 
-  // Group by kind
-  const groups = new Map<string, SearchResult[]>();
-  for (const r of results) {
-    const existing = groups.get(r.kind) ?? [];
-    existing.push(r);
-    groups.set(r.kind, existing);
-  }
-
-  const lines: string[] = [];
-  const order = ["query", "mutation", "subscription", "type", "interface", "input", "enum", "union", "scalar"];
-
-  for (const kind of order) {
-    const items = groups.get(kind);
-    if (!items) continue;
-
-    lines.push(`${kind.charAt(0).toUpperCase() + kind.slice(1)}:`);
-    for (const item of items) {
-      lines.push(`  ${item.signature}`);
-    }
-    lines.push("");
-  }
-
-  return lines.join("\n").trimEnd();
+  const orderMap = new Map(KIND_ORDER.map((k, i) => [k, i]));
+  return [...results].sort((a, b) => {
+    const aOrder = orderMap.get(a.kind) ?? KIND_ORDER.length;
+    const bOrder = orderMap.get(b.kind) ?? KIND_ORDER.length;
+    return aOrder - bOrder;
+  });
 }
 
 // ============================================================
@@ -212,7 +198,7 @@ export function formatExecuteResponse(
   truncated: boolean,
   rawLength: number,
 ): string {
-  let text = JSON.stringify(response, null, 2);
+  let text = JSON.stringify(response);
 
   if (truncated) {
     text += `\n\n[Response truncated: showing first 50KB of ${rawLength} bytes]`;
@@ -221,7 +207,7 @@ export function formatExecuteResponse(
   const hasErrors = Array.isArray(response.errors) && response.errors.length > 0;
   if (hasErrors) {
     const errorSummary = response.errors!.map((e) => e.message).join("; ");
-    text = `GraphQL errors: ${errorSummary}\n\nFull response:\n${text}`;
+    text = `GraphQL errors: ${errorSummary}\n\n${text}`;
   }
 
   return text;
@@ -231,7 +217,7 @@ export function formatExecuteResponse(
  * Format a batch execution response for display.
  */
 export function formatBatchResponse(batch: BatchResponse): string {
-  const text = JSON.stringify(batch, null, 2);
+  const text = JSON.stringify(batch);
   const { summary } = batch;
 
   let output = `Batch complete: ${summary.succeeded}/${summary.total} succeeded`;

@@ -1,17 +1,63 @@
 import { describe, it, expect } from "bun:test";
-import { formatExecuteResponse, formatBatchResponse } from "../src/format.js";
-import type { GqlResponse, BatchResponse } from "../src/types.js";
+import { formatExecuteResponse, formatBatchResponse, sortSearchResults } from "../src/format.js";
+import type { GqlResponse, BatchResponse, SearchResult } from "../src/types.js";
+
+// ============================================================
+// sortSearchResults
+// ============================================================
+
+describe("sortSearchResults", () => {
+  it("sorts results by kind in canonical order", () => {
+    const results: SearchResult[] = [
+      { kind: "type", name: "User", signature: "type User (3 fields)", description: null },
+      { kind: "query", name: "user", signature: "query user(id: ID!): User", description: null },
+      { kind: "enum", name: "Role", signature: "enum Role (2 values) { ADMIN, USER }", description: null },
+      { kind: "mutation", name: "createUser", signature: "mutation createUser(...): User!", description: null },
+    ];
+    const sorted = sortSearchResults(results);
+
+    expect(sorted[0].kind).toBe("query");
+    expect(sorted[1].kind).toBe("mutation");
+    expect(sorted[2].kind).toBe("type");
+    expect(sorted[3].kind).toBe("enum");
+  });
+
+  it("preserves relative order within the same kind", () => {
+    const results: SearchResult[] = [
+      { kind: "query", name: "users", signature: "query users: [User!]!", description: null },
+      { kind: "query", name: "user", signature: "query user(id: ID!): User", description: null },
+    ];
+    const sorted = sortSearchResults(results);
+
+    expect(sorted[0].name).toBe("users");
+    expect(sorted[1].name).toBe("user");
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(sortSearchResults([])).toEqual([]);
+  });
+
+  it("does not mutate the original array", () => {
+    const results: SearchResult[] = [
+      { kind: "type", name: "User", signature: "type User", description: null },
+      { kind: "query", name: "user", signature: "query user", description: null },
+    ];
+    const original = [...results];
+    sortSearchResults(results);
+    expect(results).toEqual(original);
+  });
+});
 
 // ============================================================
 // formatExecuteResponse
 // ============================================================
 
 describe("formatExecuteResponse", () => {
-  it("returns pretty-printed JSON for a clean response", () => {
+  it("returns compact JSON for a clean response", () => {
     const response: GqlResponse = { data: { user: { id: "1", name: "Alice" } } };
     const result = formatExecuteResponse(response, false, 50);
 
-    expect(result).toBe(JSON.stringify(response, null, 2));
+    expect(result).toBe(JSON.stringify(response));
   });
 
   it("prepends error summary when response has errors", () => {
@@ -21,9 +67,8 @@ describe("formatExecuteResponse", () => {
     };
     const result = formatExecuteResponse(response, false, 30);
 
-    expect(result).toStartWith("GraphQL errors: Not found; Unauthorized");
-    expect(result).toContain("Full response:");
-    expect(result).toContain('"Not found"');
+    expect(result).toStartWith("GraphQL errors: Not found; Unauthorized\n\n");
+    expect(result).toContain(JSON.stringify(response));
   });
 
   it("appends truncation notice when truncated", () => {
@@ -49,7 +94,7 @@ describe("formatExecuteResponse", () => {
     const result = formatExecuteResponse(response, false, 10);
 
     expect(result).not.toContain("GraphQL errors");
-    expect(result).toBe(JSON.stringify(response, null, 2));
+    expect(result).toBe(JSON.stringify(response));
   });
 });
 
@@ -68,8 +113,8 @@ describe("formatBatchResponse", () => {
     };
     const result = formatBatchResponse(batch);
 
-    expect(result).toStartWith("Batch complete: 2/2 succeeded (1 chunk)");
-    expect(result).toContain('"succeeded": 2');
+    expect(result).toStartWith("Batch complete: 2/2 succeeded (1 chunk)\n\n");
+    expect(result).toContain(JSON.stringify(batch));
   });
 
   it("reports failures in summary line", () => {
@@ -107,7 +152,7 @@ describe("formatBatchResponse", () => {
     expect(result).not.toContain("1 chunks");
   });
 
-  it("includes full JSON body after summary", () => {
+  it("includes compact JSON body after summary", () => {
     const batch: BatchResponse = {
       results: [{ index: 0, data: { name: "test" }, errors: null }],
       summary: { total: 1, succeeded: 1, failed: 0, chunks: 1 },
@@ -116,5 +161,7 @@ describe("formatBatchResponse", () => {
     const jsonPart = result.slice(result.indexOf("\n\n") + 2);
 
     expect(JSON.parse(jsonPart)).toEqual(batch);
+    // Verify it's compact (no indentation)
+    expect(jsonPart).toBe(JSON.stringify(batch));
   });
 });

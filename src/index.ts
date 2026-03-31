@@ -16,13 +16,14 @@ import { resolve } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
+import { Text } from "@mariozechner/pi-tui";
 
 import type { SchemaIndex, GqlProvider } from "./types.js";
 import { fetchIntrospection, parseIntrospection } from "./schema.js";
 import { searchSchema } from "./search.js";
 import { executeOperation, executeBatch } from "./execute.js";
 import { detectProvider } from "./providers.js";
-import { formatSearchResults, formatTypeSDL, formatExecuteResponse, formatBatchResponse } from "./format.js";
+import { sortSearchResults, formatTypeSDL, formatExecuteResponse, formatBatchResponse } from "./format.js";
 
 /**
  * Parse a .env file and merge into process.env.
@@ -143,12 +144,32 @@ export default function (pi: ExtensionAPI) {
         kind: (params.kind as any) ?? "all",
         limit: params.limit ?? 25,
       });
-      const formatted = formatSearchResults(results);
+      const sorted = sortSearchResults(results);
 
       return {
-        content: [{ type: "text", text: formatted }],
-        details: { resultCount: results.length },
+        content: [{ type: "text", text: JSON.stringify(sorted) }],
+        details: { resultCount: sorted.length, results: sorted },
       };
+    },
+
+    renderCall(args, theme) {
+      const t = new Text("", 0, 0);
+      let content = theme.fg("toolTitle", theme.bold("gql_search "));
+      content += theme.fg("muted", `"${args.pattern}"`);
+      if (args.kind && args.kind !== "all") content += theme.fg("dim", ` (${args.kind})`);
+      t.setText(content);
+      return t;
+    },
+
+    renderResult(result, { expanded }, theme) {
+      const t = new Text("", 0, 0);
+      const count = (result.details as any)?.resultCount ?? 0;
+      let content = theme.fg("success", `✓ ${count} result${count === 1 ? "" : "s"}`);
+      if (expanded) {
+        content += "\n" + (result.content?.[0] as any)?.text;
+      }
+      t.setText(content);
+      return t;
     },
   });
 
@@ -208,6 +229,27 @@ export default function (pi: ExtensionAPI) {
         content: [{ type: "text", text: formatted }],
         details: { typeName: typeInfo.name, kind: typeInfo.kind },
       };
+    },
+
+    renderCall(args, theme) {
+      const t = new Text("", 0, 0);
+      let content = theme.fg("toolTitle", theme.bold("gql_type "));
+      content += theme.fg("muted", args.name);
+      if (args.verbose) content += theme.fg("dim", " (verbose)");
+      if (args.pattern) content += theme.fg("dim", ` filter: "${args.pattern}"`);
+      t.setText(content);
+      return t;
+    },
+
+    renderResult(result, { expanded }, theme) {
+      const t = new Text("", 0, 0);
+      const d = result.details as any;
+      let content = theme.fg("success", `✓ ${d?.typeName ?? "unknown"} (${d?.kind ?? "?"})`);
+      if (expanded) {
+        content += "\n" + (result.content?.[0] as any)?.text;
+      }
+      t.setText(content);
+      return t;
     },
   });
 
@@ -286,11 +328,12 @@ export default function (pi: ExtensionAPI) {
             hasErrors: summary.failed > 0,
             batch: true,
             ...summary,
+            response: batchResponse,
           } as Record<string, unknown>,
         };
       }
 
-      // ---- Single execution path (unchanged) ----
+      // ---- Single execution path ----
       const { response, truncated, rawLength } = await executeOperation(
         p.getEndpoint(),
         headers,
@@ -304,8 +347,55 @@ export default function (pi: ExtensionAPI) {
 
       return {
         content: [{ type: "text", text }],
-        details: { hasErrors, truncated, rawLength },
+        details: { hasErrors, truncated, rawLength, response },
       };
+    },
+
+    renderCall(args, theme) {
+      const t = new Text("", 0, 0);
+      let content = theme.fg("toolTitle", theme.bold("gql_execute "));
+      if ((args as any).batch) {
+        const count = ((args as any).batch as unknown[]).length;
+        content += theme.fg("muted", `batch (${count} item${count === 1 ? "" : "s"})`);
+      } else {
+        // Show first line of operation, trimmed
+        const firstLine = args.operation.trim().split("\n")[0].slice(0, 60);
+        content += theme.fg("dim", firstLine);
+      }
+      t.setText(content);
+      return t;
+    },
+
+    renderResult(result, { expanded }, theme) {
+      const t = new Text("", 0, 0);
+      const d = result.details as any;
+      let content: string;
+
+      if (d?.batch) {
+        const ok = d.succeeded ?? 0;
+        const total = d.total ?? 0;
+        const failed = d.failed ?? 0;
+        content = theme.fg(failed > 0 ? "warning" : "success",
+          `✓ ${ok}/${total} succeeded${failed > 0 ? `, ${failed} failed` : ""}`);
+      } else {
+        const hasErrors = d?.hasErrors;
+        const rawLength = d?.rawLength ?? 0;
+        const kb = (rawLength / 1024).toFixed(1);
+        if (hasErrors) {
+          const errors = d?.response?.errors ?? [];
+          const summary = errors.map((e: any) => e.message).join("; ");
+          content = theme.fg("warning", `⚠ ${errors.length} error${errors.length === 1 ? "" : "s"}: ${summary}`);
+        } else {
+          content = theme.fg("success", `✓ ${kb}KB response`);
+        }
+        if (d?.truncated) content += theme.fg("dim", " (truncated)");
+      }
+
+      if (expanded) {
+        content += "\n" + (result.content?.[0] as any)?.text;
+      }
+      t.setText(content);
+      return t;
     },
   });
 }
