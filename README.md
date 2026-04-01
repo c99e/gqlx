@@ -1,4 +1,4 @@
-# gqlx
+# [gqlx](https://github.com/c99e/gqlx)
 
 A [pi](https://github.com/badlogic/pi-mono) extension that gives the agent schema-aware GraphQL exploration and execution tools.
 
@@ -33,7 +33,7 @@ pi install git:github.com/c99e/gqlx
 ### For development
 
 ```bash
-pi -e ~/path/to/pi-graphql
+pi -e ~/path/to/gqlx
 ```
 
 ## Configuration
@@ -68,13 +68,11 @@ export LINEAR_API_KEY=your-api-key
 
 ### Loading credentials
 
-Use a `.env` file with [direnv](https://direnv.net/), or source it manually:
+The extension loads `.env` from the working directory automatically on session start. Alternatively, use [direnv](https://direnv.net/) or source it before launching:
 
 ```bash
 source .env && pi
 ```
-
-The extension also loads `.env` from the working directory automatically on session start.
 
 ## Tool Reference
 
@@ -86,7 +84,7 @@ Search the GraphQL schema for queries, mutations, types, inputs, enums, and fiel
 |-----------|------|-------------|
 | `pattern` | `string` | Search term (case-insensitive substring) or `"*"` to list all |
 | `kind` | `string?` | Filter by kind: `query`, `mutation`, `subscription`, `type`, `input`, `enum`, `scalar`, `union`, `interface`, or `all` (default) |
-| `limit` | `number?` | Max results per category (default 25, max 100) |
+| `limit` | `number?` | Max results (default 25, max 100). When `kind` is `all`, applied per category so no single kind dominates |
 
 **Features:**
 - Searches type names, field names, descriptions, and **enum values** (e.g., searching `"EUR"` finds `CurrencyCode.EUR`)
@@ -106,7 +104,7 @@ Get the full definition of a GraphQL type with fields, arguments, and referenced
 **Features:**
 - **Compact mode** (default): shows field names and types only — minimal tokens
 - **Verbose mode**: adds `# description` comments on the type and each field
-- **Pattern filter**: on large types (50+ fields), show only fields matching a substring (e.g., `pattern: "seo"` on Shopify's `Product` type)
+- **Pattern filter**: show only fields matching a substring — especially useful on large types (e.g., `pattern: "seo"` on Shopify's `Product` type)
 - Automatically expands referenced enums, inputs, and custom scalars inline
 - Suggests similar type names on typos
 
@@ -130,7 +128,7 @@ Execute a GraphQL query or mutation.
 - Summary line shows succeeded/failed counts
 - Errors are mapped to individual batch items by GraphQL path
 
-Example — update 50 products in one tool call:
+Example — update 50 Shopify products in one tool call:
 ```
 operation: "mutation($id: ID!, $input: ProductInput!) { productUpdate(id: $id, input: $input) { product { id } userErrors { message } } }"
 batch: [{"id": "gid://shopify/Product/1", "input": {"title": "New Title"}}, ...]
