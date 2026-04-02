@@ -1,85 +1,10 @@
 import type {
   ExecuteOptions,
   GqlResponse,
-  ShopifyConfig,
   BatchExecuteOptions,
   BatchResult,
   BatchResponse,
 } from './types.js';
-
-const DEFAULT_API_VERSION = '2026-01';
-
-// ============================================================
-// Shopify config
-// ============================================================
-
-export function configFromEnv(
-  env: Record<string, string | undefined> = process.env,
-): ShopifyConfig {
-  const store = env.SHOPIFY_STORE;
-  const clientId = env.SHOPIFY_CLIENT_ID;
-  const clientSecret = env.SHOPIFY_CLIENT_SECRET;
-
-  if (!store || !clientId || !clientSecret) {
-    throw new Error(
-      [
-        'Missing Shopify configuration. Required environment variables:',
-        '',
-        '  SHOPIFY_STORE=your-store.myshopify.com',
-        '  SHOPIFY_CLIENT_ID=your-client-id',
-        '  SHOPIFY_CLIENT_SECRET=your-client-secret',
-        '',
-        'Optional:',
-        `  SHOPIFY_API_VERSION=2026-01  (default)`,
-      ].join('\n'),
-    );
-  }
-
-  return {
-    store,
-    clientId,
-    clientSecret,
-    apiVersion: env.SHOPIFY_API_VERSION ?? DEFAULT_API_VERSION,
-  };
-}
-
-export function getEndpoint(config: ShopifyConfig): string {
-  return `https://${config.store}/admin/api/${config.apiVersion}/graphql.json`;
-}
-
-// ============================================================
-// Token exchange (client_credentials) — stateless, no caching
-// ============================================================
-
-export async function exchangeToken(config: ShopifyConfig): Promise<string> {
-  const tokenUrl = `https://${config.store}/admin/oauth/access_token`;
-  const res = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'client_credentials',
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(
-      `Shopify token exchange failed: ${res.status} ${res.statusText}${text ? `\n${text.slice(0, 500)}` : ''}`,
-    );
-  }
-
-  const json = (await res.json()) as { access_token: string };
-  return json.access_token;
-}
-
-export function buildHeaders(token: string): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'X-Shopify-Access-Token': token,
-  };
-}
 
 // ============================================================
 // Execute GraphQL operations

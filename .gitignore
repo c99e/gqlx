@@ -2,4 +2,7 @@ node_modules/
 dist/
 .env
 *.tgz
+.pi/
+
+# Local dev notes — not part of the project
 docs/

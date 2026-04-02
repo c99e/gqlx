@@ -1,9 +1,11 @@
 import { test, expect, describe, spyOn } from "bun:test";
 import {
   configFromEnv,
-  getEndpoint,
+  getShopifyEndpoint as getEndpoint,
   exchangeToken,
-  buildHeaders,
+  buildShopifyHeaders as buildHeaders,
+} from "../src/providers.js";
+import {
   executeOperation,
   buildAliasedOperation,
   collectBatchResults,

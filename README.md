@@ -1,4 +1,4 @@
-# pi-graphql
+# gqlx
 
 A [pi](https://github.com/badlogic/pi-mono) extension that gives the agent schema-aware GraphQL exploration and execution tools.
 
@@ -151,6 +151,8 @@ pi -e ./
 # Type check
 bunx tsc --noEmit
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting changes and adding new providers.
 
 ## License
 
