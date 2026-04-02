@@ -128,32 +128,7 @@ export function detectProvider(env = process.env): GqlProvider {
 
 Order matters — the first matching provider wins when multiple sets of env vars are present.
 
-### 3. Add tests
-
-Add tests to `test/providers.test.ts` following the existing pattern:
-
-```ts
-describe('ExampleProvider', () => {
-  test('throws when EXAMPLE_API_KEY is missing', () => {
-    expect(() => new ExampleProvider({})).toThrow('EXAMPLE_API_KEY');
-  });
-
-  test('returns correct endpoint', () => {
-    const p = new ExampleProvider({ EXAMPLE_API_KEY: 'key' });
-    expect(p.getEndpoint()).toBe('https://api.example.com/graphql');
-  });
-
-  test('getHeaders includes auth', async () => {
-    const p = new ExampleProvider({ EXAMPLE_API_KEY: 'key' });
-    const h = await p.getHeaders();
-    expect(h['Authorization']).toBe('Bearer key');
-  });
-});
-```
-
-Also update the `detectProvider` tests to cover the new provider.
-
-### 4. Document
+### 3. Document
 
 Update the README:
 - Add a configuration section with the required env vars
