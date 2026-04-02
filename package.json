@@ -1,5 +1,5 @@
 {
-  "name": "pi-graphql",
+  "name": "gqlx",
   "version": "0.1.0",
   "type": "module",
   "description": "Pi extension for GraphQL schema exploration and query execution",
