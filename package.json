@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Pi extension for GraphQL schema exploration and query execution",
-  "keywords": ["pi-package"],
+  "keywords": ["pi-package", "pi-extension", "graphql", "ai-tools", "introspection", "shopify", "linear", "typescript", "cli"],
   "pi": {
     "extensions": ["./src/index.ts"]
   },
