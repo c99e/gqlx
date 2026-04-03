@@ -108,29 +108,29 @@ Key points:
 
 ### 2. Register in auto-detection
 
-Update `detectProvider()` in `src/providers.ts` to check for your provider's env vars:
+Update `detectProviders()` in `src/providers.ts` to check for your provider's env vars:
 
 ```ts
-export function detectProvider(env = process.env): GqlProvider {
+export function detectProviders(env = process.env): Map<string, GqlProvider> {
+  const providers = new Map<string, GqlProvider>();
+
   // ... existing checks ...
 
   const hasExample = !!env.EXAMPLE_API_KEY;
 
-  if (hasShopify) return new ShopifyProvider(env);
-  if (hasLinear) return new LinearProvider(env);
-  if (hasExample) return new ExampleProvider(env);  // add here
+  if (hasShopify) providers.set('shopify', new ShopifyProvider(env));
+  if (hasLinear) providers.set('linear', new LinearProvider(env));
+  if (hasExample) providers.set('example', new ExampleProvider(env));  // add here
 
-  throw new Error(
-    // ... update the error message to list the new provider ...
-  );
+  return providers;
 }
 ```
 
-Order matters — the first matching provider wins when multiple sets of env vars are present.
+All configured providers are detected simultaneously — the user can work with multiple APIs in the same session.
 
 ### 3. Document
 
 Update the README:
 - Add a configuration section with the required env vars
 - Update `.env.example` with commented-out example values
-- Add to the "no provider detected" error message in `detectProvider()`
+- Add to the `NO_PROVIDERS_MESSAGE` constant in `providers.ts`

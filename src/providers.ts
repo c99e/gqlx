@@ -138,12 +138,26 @@ export class LinearProvider implements GqlProvider {
 }
 
 // ============================================================
-// Auto-detection
+// Auto-detection (multi-provider)
 // ============================================================
 
-export function detectProvider(
+const NO_PROVIDERS_MESSAGE = [
+  'No GraphQL provider configured. Set environment variables for one or more of:',
+  '',
+  'Shopify:',
+  '  SHOPIFY_STORE=your-store.myshopify.com',
+  '  SHOPIFY_CLIENT_ID=your-client-id',
+  '  SHOPIFY_CLIENT_SECRET=your-client-secret',
+  '',
+  'Linear:',
+  '  LINEAR_API_KEY=your-api-key',
+].join('\n');
+
+export function detectProviders(
   env: Record<string, string | undefined> = process.env,
-): GqlProvider {
+): Map<string, GqlProvider> {
+  const providers = new Map<string, GqlProvider>();
+
   const hasShopify = !!(
     env.SHOPIFY_STORE &&
     env.SHOPIFY_CLIENT_ID &&
@@ -151,20 +165,26 @@ export function detectProvider(
   );
   const hasLinear = !!env.LINEAR_API_KEY;
 
-  if (hasShopify) return new ShopifyProvider(env);
-  if (hasLinear) return new LinearProvider(env);
+  if (hasShopify) providers.set('shopify', new ShopifyProvider(env));
+  if (hasLinear) providers.set('linear', new LinearProvider(env));
 
+  return providers;
+}
+
+export function resolveProvider(
+  providers: Map<string, GqlProvider>,
+  name: string,
+): GqlProvider {
+  const key = name.toLowerCase();
+  const provider = providers.get(key);
+  if (provider) return provider;
+
+  if (providers.size === 0) {
+    throw new Error(NO_PROVIDERS_MESSAGE);
+  }
+
+  const available = Array.from(providers.keys()).join(', ');
   throw new Error(
-    [
-      'No GraphQL provider detected. Set environment variables for one of:',
-      '',
-      'Shopify:',
-      '  SHOPIFY_STORE=your-store.myshopify.com',
-      '  SHOPIFY_CLIENT_ID=your-client-id',
-      '  SHOPIFY_CLIENT_SECRET=your-client-secret',
-      '',
-      'Linear:',
-      '  LINEAR_API_KEY=your-api-key',
-    ].join('\n'),
+    `Unknown provider "${name}". Available providers: ${available}`,
   );
 }

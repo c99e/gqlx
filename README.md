@@ -38,7 +38,7 @@ pi -e ~/path/to/gqlx
 
 ## Configuration
 
-The extension auto-detects which provider to use based on which environment variables are set. Configure one of the following:
+The extension auto-detects all configured providers from environment variables. Configure one or more of the following:
 
 ### Shopify
 
@@ -82,6 +82,7 @@ Search the GraphQL schema for queries, mutations, types, inputs, enums, and fiel
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| `provider` | `string` | Provider name (e.g. `"shopify"`, `"linear"`) |
 | `pattern` | `string` | Search term (case-insensitive substring) or `"*"` to list all |
 | `kind` | `string?` | Filter by kind: `query`, `mutation`, `subscription`, `type`, `input`, `enum`, `scalar`, `union`, `interface`, or `all` (default) |
 | `limit` | `number?` | Max results (default 25, max 100). When `kind` is `all`, applied per category so no single kind dominates |
@@ -97,6 +98,7 @@ Get the full definition of a GraphQL type with fields, arguments, and referenced
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| `provider` | `string` | Provider name (e.g. `"shopify"`, `"linear"`) |
 | `name` | `string` | Exact type name (case-sensitive) |
 | `verbose` | `boolean?` | Include descriptions on types and fields (default `false`) |
 | `pattern` | `string?` | Filter fields by case-insensitive substring match on field name, type, or argument names |
@@ -114,6 +116,7 @@ Execute a GraphQL query or mutation.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| `provider` | `string` | Provider name (e.g. `"shopify"`, `"linear"`) |
 | `operation` | `string` | The full GraphQL operation |
 | `variables` | `object?` | Variables for a single operation |
 | `batch` | `object[]?` | Array of variable sets for batch execution (mutually exclusive with `variables`) |
