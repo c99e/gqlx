@@ -2,7 +2,8 @@ import { test, expect, describe, spyOn } from "bun:test";
 import {
   ShopifyProvider,
   LinearProvider,
-  detectProvider,
+  detectProviders,
+  resolveProvider,
 } from "../src/providers.js";
 
 // ============================================================
@@ -244,41 +245,139 @@ describe("LinearProvider", () => {
 });
 
 // ============================================================
-// detectProvider — auto-detection
+// detectProviders — multi-provider auto-detection
 // ============================================================
 
-describe("detectProvider", () => {
+describe("detectProviders", () => {
+  test("returns empty map when no provider vars are present", () => {
+    const providers = detectProviders({});
+    expect(providers.size).toBe(0);
+  });
+
   test("detects Shopify when all Shopify vars are present", () => {
-    const provider = detectProvider({
+    const providers = detectProviders({
       SHOPIFY_STORE: "test.myshopify.com",
       SHOPIFY_CLIENT_ID: "cid",
       SHOPIFY_CLIENT_SECRET: "csecret",
     });
-    expect(provider.name).toBe("shopify");
+    expect(providers.size).toBe(1);
+    expect(providers.has("shopify")).toBe(true);
+    expect(providers.get("shopify")!.name).toBe("shopify");
   });
 
   test("detects Linear when LINEAR_API_KEY is present", () => {
-    const provider = detectProvider({ LINEAR_API_KEY: "lin_key" });
-    expect(provider.name).toBe("linear");
+    const providers = detectProviders({ LINEAR_API_KEY: "lin_key" });
+    expect(providers.size).toBe(1);
+    expect(providers.has("linear")).toBe(true);
+    expect(providers.get("linear")!.name).toBe("linear");
   });
 
-  test("prefers Shopify when both provider vars are present", () => {
-    const provider = detectProvider({
+  test("detects both when both sets of vars are present", () => {
+    const providers = detectProviders({
       SHOPIFY_STORE: "test.myshopify.com",
       SHOPIFY_CLIENT_ID: "cid",
       SHOPIFY_CLIENT_SECRET: "csecret",
       LINEAR_API_KEY: "lin_key",
     });
-    expect(provider.name).toBe("shopify");
+    expect(providers.size).toBe(2);
+    expect(providers.has("shopify")).toBe(true);
+    expect(providers.has("linear")).toBe(true);
   });
 
-  test("throws when no provider vars are present", () => {
-    expect(() => detectProvider({})).toThrow("No GraphQL provider detected");
+  test("partial Shopify vars do not trigger Shopify detection", () => {
+    const providers = detectProviders({ SHOPIFY_STORE: "test.myshopify.com" });
+    expect(providers.has("shopify")).toBe(false);
   });
 
-  test("error message lists all available providers and their vars", () => {
+  test("detects Linear when only partial Shopify vars exist alongside LINEAR_API_KEY", () => {
+    const providers = detectProviders({
+      SHOPIFY_STORE: "test.myshopify.com",
+      LINEAR_API_KEY: "lin_key",
+    });
+    expect(providers.size).toBe(1);
+    expect(providers.has("linear")).toBe(true);
+    expect(providers.has("shopify")).toBe(false);
+  });
+
+  test("each detected provider has a working getEndpoint", () => {
+    const providers = detectProviders({
+      SHOPIFY_STORE: "test.myshopify.com",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+      LINEAR_API_KEY: "lin_key",
+    });
+    expect(providers.get("shopify")!.getEndpoint()).toContain("test.myshopify.com");
+    expect(providers.get("linear")!.getEndpoint()).toBe("https://api.linear.app/graphql");
+  });
+
+  test("each detected provider has working getHeaders", async () => {
+    const spy = spyOn(globalThis as any, "fetch").mockImplementation(async () => {
+      return new Response(JSON.stringify({ access_token: "shp_tok" }));
+    });
+
+    const providers = detectProviders({
+      SHOPIFY_STORE: "test.myshopify.com",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+      LINEAR_API_KEY: "lin_key",
+    });
+
+    const shopifyHeaders = await providers.get("shopify")!.getHeaders();
+    expect(shopifyHeaders["X-Shopify-Access-Token"]).toBe("shp_tok");
+
+    const linearHeaders = await providers.get("linear")!.getHeaders();
+    expect(linearHeaders["Authorization"]).toBe("lin_key");
+
+    spy.mockRestore();
+  });
+});
+
+// ============================================================
+// resolveProvider — provider lookup with error messages
+// ============================================================
+
+describe("resolveProvider", () => {
+  test("returns the provider when name matches", () => {
+    const providers = detectProviders({ LINEAR_API_KEY: "lin_key" });
+    const provider = resolveProvider(providers, "linear");
+    expect(provider.name).toBe("linear");
+  });
+
+  test("name matching is case-insensitive", () => {
+    const providers = detectProviders({ LINEAR_API_KEY: "lin_key" });
+    const provider = resolveProvider(providers, "Linear");
+    expect(provider.name).toBe("linear");
+  });
+
+  test("throws when name does not match any configured provider", () => {
+    const providers = detectProviders({ LINEAR_API_KEY: "lin_key" });
+    expect(() => resolveProvider(providers, "shopify")).toThrow();
+  });
+
+  test("error for invalid name lists available providers", () => {
+    const providers = detectProviders({
+      SHOPIFY_STORE: "test.myshopify.com",
+      SHOPIFY_CLIENT_ID: "cid",
+      SHOPIFY_CLIENT_SECRET: "csecret",
+      LINEAR_API_KEY: "lin_key",
+    });
     try {
-      detectProvider({});
+      resolveProvider(providers, "github");
+    } catch (e: any) {
+      expect(e.message).toContain("shopify");
+      expect(e.message).toContain("linear");
+    }
+  });
+
+  test("throws when no providers are configured", () => {
+    const providers = detectProviders({});
+    expect(() => resolveProvider(providers, "linear")).toThrow();
+  });
+
+  test("error for no providers lists all supported types and env vars", () => {
+    const providers = detectProviders({});
+    try {
+      resolveProvider(providers, "linear");
     } catch (e: any) {
       expect(e.message).toContain("Shopify");
       expect(e.message).toContain("SHOPIFY_STORE");
@@ -287,30 +386,5 @@ describe("detectProvider", () => {
       expect(e.message).toContain("Linear");
       expect(e.message).toContain("LINEAR_API_KEY");
     }
-  });
-
-  test("partial Shopify vars do not trigger Shopify detection", () => {
-    expect(() => detectProvider({ SHOPIFY_STORE: "test.myshopify.com" })).toThrow(
-      "No GraphQL provider detected",
-    );
-  });
-
-  test("detects Linear when only partial Shopify vars exist alongside LINEAR_API_KEY", () => {
-    const provider = detectProvider({
-      SHOPIFY_STORE: "test.myshopify.com",
-      LINEAR_API_KEY: "lin_key",
-    });
-    expect(provider.name).toBe("linear");
-  });
-
-  test("returns a provider with working getEndpoint", () => {
-    const provider = detectProvider({ LINEAR_API_KEY: "lin_key" });
-    expect(provider.getEndpoint()).toBe("https://api.linear.app/graphql");
-  });
-
-  test("returns a provider with working getHeaders", async () => {
-    const provider = detectProvider({ LINEAR_API_KEY: "lin_key" });
-    const headers = await provider.getHeaders();
-    expect(headers["Authorization"]).toBe("lin_key");
   });
 });

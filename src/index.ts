@@ -22,7 +22,7 @@ import type { SchemaIndex, GqlProvider } from "./types.js";
 import { fetchIntrospection, parseIntrospection } from "./schema.js";
 import { searchSchema } from "./search.js";
 import { executeOperation, executeBatch } from "./execute.js";
-import { detectProvider } from "./providers.js";
+import { detectProviders, resolveProvider } from "./providers.js";
 import { sortSearchResults, formatTypeSDL, formatExecuteResponse, formatBatchResponse } from "./format.js";
 
 /**
@@ -59,42 +59,56 @@ function loadEnvFile(filepath: string): void {
 
 export default function (pi: ExtensionAPI) {
   // ---------------------------------------------------------
-  // State: cached per session
+  // State: cached per session, isolated per provider
   // ---------------------------------------------------------
-  let provider: GqlProvider | null = null;
-  let schemaIndex: SchemaIndex | null = null;
-  let schemaError: string | null = null;
+  let providers = new Map<string, GqlProvider>();
+  const schemaIndexes = new Map<string, SchemaIndex>();
+  const schemaErrors = new Map<string, string>();
 
-  function getProvider(): GqlProvider {
-    if (!provider) {
-      provider = detectProvider();
-    }
-    return provider;
+  function getProviderByName(name: string): GqlProvider {
+    return resolveProvider(providers, name);
   }
 
-  async function getSchema(signal?: AbortSignal): Promise<SchemaIndex> {
-    if (schemaIndex) return schemaIndex;
-    if (schemaError) throw new Error(schemaError);
+  async function getSchemaForProvider(providerName: string, signal?: AbortSignal): Promise<SchemaIndex> {
+    const key = providerName.toLowerCase();
+    const cached = schemaIndexes.get(key);
+    if (cached) return cached;
 
+    const cachedError = schemaErrors.get(key);
+    if (cachedError) throw new Error(cachedError);
+
+    const p = getProviderByName(providerName);
     try {
-      const p = getProvider();
       const headers = await p.getHeaders();
       const introspection = await fetchIntrospection(p.getEndpoint(), headers, signal);
-      schemaIndex = parseIntrospection(introspection);
-      return schemaIndex;
+      const index = parseIntrospection(introspection);
+      schemaIndexes.set(key, index);
+      return index;
     } catch (err) {
-      schemaError = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      schemaErrors.set(key, msg);
       throw err;
     }
   }
 
-  // Load .env and reset cache on new session
+  // Load .env, detect providers, and reset caches on new session
   pi.on("session_start", async (_event, ctx) => {
-    if (provider) provider.reset();
-    provider = null;
-    schemaIndex = null;
-    schemaError = null;
+    for (const p of providers.values()) p.reset();
+    providers = new Map();
+    schemaIndexes.clear();
+    schemaErrors.clear();
     loadEnvFile(resolve(ctx.cwd, ".env"));
+    providers = detectProviders();
+  });
+
+  // Inject configured provider names into system prompt
+  pi.on("before_agent_start", async (event) => {
+    if (providers.size === 0) return;
+    const names = Array.from(providers.keys()).join(", ");
+    return {
+      systemPrompt: event.systemPrompt +
+        `\n\nGraphQL providers available (use these as the "provider" parameter for gql_search, gql_type, gql_execute): ${names}`,
+    };
   });
 
   // ---------------------------------------------------------
@@ -115,6 +129,9 @@ export default function (pi: ExtensionAPI) {
       'Use pattern "*" with a kind filter to list all available queries or mutations.',
     ],
     parameters: Type.Object({
+      provider: Type.String({
+        description: 'Provider name (e.g. "shopify", "linear")',
+      }),
       pattern: Type.String({
         description: 'Search term (case-insensitive substring match) or "*" to list all',
       }),
@@ -138,7 +155,7 @@ export default function (pi: ExtensionAPI) {
     }),
 
     async execute(_toolCallId, params, signal) {
-      const index = await getSchema(signal);
+      const index = await getSchemaForProvider(params.provider, signal);
       const results = searchSchema(index, {
         pattern: params.pattern,
         kind: (params.kind as any) ?? "all",
@@ -192,6 +209,9 @@ export default function (pi: ExtensionAPI) {
       "Use pattern to filter large types (50+ fields) to only show fields matching a substring.",
     ],
     parameters: Type.Object({
+      provider: Type.String({
+        description: 'Provider name (e.g. "shopify", "linear")',
+      }),
       name: Type.String({ description: "Exact type name (case-sensitive)" }),
       verbose: Type.Optional(
         Type.Boolean({
@@ -206,7 +226,7 @@ export default function (pi: ExtensionAPI) {
     }),
 
     async execute(_toolCallId, params, signal) {
-      const index = await getSchema(signal);
+      const index = await getSchemaForProvider(params.provider, signal);
       const typeInfo = index.types.get(params.name);
 
       if (!typeInfo) {
@@ -271,6 +291,9 @@ export default function (pi: ExtensionAPI) {
       "Use batch to apply the same operation to many items — provide the operation template and an array of variable sets. The extension handles aliasing and chunking automatically.",
     ],
     parameters: Type.Object({
+      provider: Type.String({
+        description: 'Provider name (e.g. "shopify", "linear")',
+      }),
       operation: Type.String({
         description: "The full GraphQL operation (query or mutation)",
       }),
@@ -305,7 +328,7 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
-      const p = getProvider();
+      const p = getProviderByName(params.provider);
       const headers = await p.getHeaders();
 
       // ---- Batch execution path ----
